@@ -1,0 +1,358 @@
+{
+  "_type": "ESFV_PROJECT",
+  "_version": 1,
+  "project": {
+    "name": "Estación de Monitoreo Ambiental Remota — Alta Guajira, Colombia",
+    "id": "ESFV-2026-001",
+    "members": "Dubraska Duran; Juan Goldringer",
+    "date": "2026-10-04",
+    "appType": "off-grid",
+    "dayStart": 6,
+    "dayEnd": 18,
+    "opDaysPerMonth": 30,
+    "opDaysPerYear": 365,
+    "unitCost": 1200,
+    "loads": [
+      {
+        "id": "C4uzwe",
+        "code": "C1",
+        "description": "Sensor meteorológico",
+        "quantity": 1,
+        "unitPower": 15,
+        "schedule": [
+          {
+            "start": 0,
+            "end": 23
+          },
+          {
+            "start": 23,
+            "end": 0
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#F5A623"
+      },
+      {
+        "id": "Cnn541",
+        "code": "C2",
+        "description": "Datalogger ",
+        "quantity": 1,
+        "unitPower": 25,
+        "schedule": [
+          {
+            "start": 0,
+            "end": 23
+          },
+          {
+            "start": 23,
+            "end": 0
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#38BDF8"
+      },
+      {
+        "id": "Cfpc6c",
+        "code": "C3",
+        "description": "Computador portátil ",
+        "quantity": 1,
+        "unitPower": 350,
+        "schedule": [
+          {
+            "start": 8,
+            "end": 12
+          },
+          {
+            "start": 14,
+            "end": 17
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#7C6FF0"
+      },
+      {
+        "id": "C35u6f",
+        "code": "C4",
+        "description": "Radio VHF",
+        "quantity": 1,
+        "unitPower": 120,
+        "schedule": [
+          {
+            "start": 7,
+            "end": 9
+          },
+          {
+            "start": 16,
+            "end": 18
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#34D399"
+      },
+      {
+        "id": "Cn04gr",
+        "code": "C5",
+        "description": "Iluminación LED exterior ",
+        "quantity": 2,
+        "unitPower": 60,
+        "schedule": [
+          {
+            "start": 18,
+            "end": 6
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#F87171"
+      },
+      {
+        "id": "Cpc01m",
+        "code": "C6",
+        "description": "Ventilador de gabinete",
+        "quantity": 1,
+        "unitPower": 45,
+        "schedule": [
+          {
+            "start": 10,
+            "end": 16
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#FBBF24"
+      },
+      {
+        "id": "Cx1exe",
+        "code": "C7",
+        "description": "Cargador de baterías portátil ",
+        "quantity": 1,
+        "unitPower": 80,
+        "schedule": [
+          {
+            "start": 22,
+            "end": 4
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#22D3EE"
+      },
+      {
+        "id": "Czkezv",
+        "code": "C8",
+        "description": "Bomba de agua",
+        "quantity": 1,
+        "unitPower": 750,
+        "schedule": [
+          {
+            "start": 6,
+            "end": 7
+          },
+          {
+            "start": 17,
+            "end": 18
+          }
+        ],
+        "fu": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "color": "#FB7185"
+      }
+    ]
+  }
+}
