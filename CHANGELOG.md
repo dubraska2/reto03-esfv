@@ -26,7 +26,8 @@ Auditoría del Reto 03 contra el TdR (métodos de cálculo, RF-25 a RF-36, crite
 - **Nuevo:** columna "Ns máx." por equipo en las tablas de reguladores e inversores (antes solo aparecía en el informe y solo para el equipo elegido).
 - **Nuevo:** verificación de la tensión de banco que admite cada regulador según su ficha (por ejemplo 12/24 V).
 - **Nuevo:** reconfiguración concreta Ns × Np del mismo panel cuando un equipo no admite el arreglo, con un botón para aplicarla.
-- **Corregido:** la corriente de diseño de conductores usaba 1,25 × 1,25 × Isc. Ahora usa 1,25 × Isc, como dice el TdR, y muestra el valor de 1,56 × Isc como referencia.
+- **Revisado:** la corriente de diseño de conductores se mantiene en **1,25 × 1,25 × Isc** (21,9 A en el caso de prueba). Primero se cambió a 1,25 × Isc, por la frase "con el factor 1,25" del TdR del Reto 03, pero se revirtió: el TdR del Reto 02 (§7.3, ec. 3) define I<sub>diseño</sub> = 1,25 · 1,25 · Isc según la NTC 2050 art. 690-8, y así el Reto 02 y el Reto 03 muestran el mismo valor. Ahora la leyenda y el informe declaran el factor aplicado.
+- **Corregido:** el texto del aviso de área en la tabla de paneles (Reto 02) ahora dice "⚠ en la columna Área: el arreglo ocupa más que el área disponible declarada (RF-22)".
 
 ### Banco de baterías (RF-32, RF-33, RF-35)
 - **Corregido:** un mismo campo de tensión servía para la corriente del regulador y para el Cn [Ah]. Con LFP de 51,2 V daba Cn = 438,7 Ah en vez de 411,2 Ah y tasa C de carga de 0,086 en vez de 0,092. Ahora se separan:

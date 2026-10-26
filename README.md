@@ -100,7 +100,7 @@ Cambiar el tipo de aplicación conserva el panel elegido a mano y los valores de
 - **Corrientes:**
   - Corriente de salida al banco = P<sub>pico</sub> / V<sub>nominal</sub>, **sin** el factor 1,25.
   - Isc e Imp por entrada.
-  - Corriente de diseño de conductores = **1,25 × Isc**, el factor del TdR (NTC 2050 art. 690-8). Como referencia también se muestra 1,56 × Isc, que añade el factor de servicio continuo.
+  - Corriente de diseño de conductores = **1,25 × 1,25 × Isc** (NTC 2050 art. 690-8). Es el mismo criterio del TdR del Reto 02 (§7.3, ec. 3), que da 21,9 A en el caso de prueba, así que la app muestra la misma corriente de diseño en las pestañas del Reto 02 y del Reto 03.
 - **Tensión de banco admitida:** cada regulador comercial declara las tensiones que acepta según su ficha (por ejemplo 12/24 V). Si el sistema usa otra tensión, el equipo no cumple.
 - **Relación DC/AC** = P<sub>pico</sub> / P<sub>ac</sub>, con rango visible y configurable (1,0–1,3 por defecto). Alerta de recorte o de inversor sobredimensionado.
 - **Veredicto por equipo** (cumple / alerta / no cumple) con el dato que falla y una **reconfiguración concreta** Ns × Np del mismo panel, que se aplica con un clic.

@@ -2165,7 +2165,7 @@ function renderCatalogoPanel(ppicoW){
     </div>
     <div class="legend-row">
       <span>I diseño = 1,25 × 1,25 × Isc del generador (NTC 2050 art. 690-8)</span>
-      <span style="color:var(--danger)">⚠ en Área = supera el área disponible declarada</span>
+      <span style="color:var(--danger)">⚠ en la columna Área: el arreglo ocupa más que el área disponible declarada (RF-22)</span>
     </div>`}
   </div>`;
 }
@@ -2470,9 +2470,9 @@ function computeVerificacionCorrientes(gen, equipo, tipo){
   // del regulador, tal como lo aclara explícitamente el TdR del Reto 03).
   const iSalidaBancoA = cfg.potenciaInstaladaW / bancState.tensionBancoV;
   const iscGeneradorA = cfg.corrienteArregloA;       // Np x Isc_módulo
-  // RF-29: corriente de diseño de conductores con el factor 1,25 del TdR (NTC 2050 art. 690-8).
-  // El Reto 02 reporta además 1,25 × 1,25 × Isc (con el factor de servicio continuo).
-  const iDisenoConductoresA = 1.25*iscGeneradorA;
+  // RF-29: corriente de diseño de conductores según NTC 2050 art. 690-8, con el mismo criterio
+  // que el TdR del Reto 02 (§7.3, ec. 3: I_diseño = 1,25 · 1,25 · Isc = 21,9 A en el caso de prueba).
+  const iDisenoConductoresA = cfg.corrienteDisenoA;
   const impGeneradorA = cfg.panel.imp * cfg.np;
 
   if(tipo==='regulador'){
@@ -3092,7 +3092,7 @@ function renderReguladoresPanel(gen){
     <div class="legend-row">
       <span>Ns máx. = ⌊V<sub>oc,máx equipo</sub> / V<sub>oc,frío módulo</sub>⌋ (Ns usado: ${gen.cfg.ns})</span>
       <span>I salida al banco = P<sub>pico instalada</sub> / V<sub>nominal</sub> (sin el factor 1,25 — ese factor es para conductores/protecciones)</span>
-      <span>I diseño de conductores = 1,25 × I<sub>sc,gen</sub> = ${fmt(1.25*gen.cfg.corrienteArregloA,2)} A (factor del TdR, NTC 2050 art. 690-8). Si además se aplica el 1,25 por servicio continuo de 690-8(b): 1,56 × I<sub>sc</sub> = ${fmt(gen.cfg.corrienteDisenoA,2)} A.</span>
+      <span>I diseño de conductores = 1,25 × 1,25 × I<sub>sc,gen</sub> = ${fmt(gen.cfg.corrienteDisenoA,2)} A (NTC 2050 art. 690-8; mismo criterio del Reto 02)</span>
     </div>
   </div>`;
 }
@@ -3134,7 +3134,7 @@ function renderInversoresPanel(gen){
         </tbody>
       </table>
     </div>
-    <div class="legend-row"><span>Ns máx. = ⌊V<sub>oc,máx equipo</sub> / V<sub>oc,frío módulo</sub>⌋ (Ns usado: ${gen.cfg.ns})</span><span>I diseño de conductores = 1,25 × I<sub>sc,gen</sub> = ${fmt(1.25*gen.cfg.corrienteArregloA,2)} A (TdR, NTC 2050 art. 690-8)</span><span>Relación DC/AC = P<sub>pico instalada</sub> / P<sub>ac</sub> · rango configurado: ${fmt(bancState.dcAcMin,2)}–${fmt(bancState.dcAcMax,2)} (PVWatts v8 sugiere 1,2)</span></div>
+    <div class="legend-row"><span>Ns máx. = ⌊V<sub>oc,máx equipo</sub> / V<sub>oc,frío módulo</sub>⌋ (Ns usado: ${gen.cfg.ns})</span><span>I diseño de conductores = 1,25 × 1,25 × I<sub>sc,gen</sub> = ${fmt(gen.cfg.corrienteDisenoA,2)} A (NTC 2050 art. 690-8)</span><span>Relación DC/AC = P<sub>pico instalada</sub> / P<sub>ac</sub> · rango configurado: ${fmt(bancState.dcAcMin,2)}–${fmt(bancState.dcAcMax,2)} (PVWatts v8 sugiere 1,2)</span></div>
   </div>`;
 }
 
@@ -3297,7 +3297,7 @@ function buildBancoReportSection(){
         <tr><td>Regulador seleccionado</td><td colspan="3">${escapeHtml(eq.marca)} ${escapeHtml(eq.modelo)} — ${veredictoBadge(ev.veredicto)}</td></tr>
         <tr><td>Módulos máx. en serie admitidos</td><td>${ev.vArr.nsMaxEquipo}</td><td>Ns usado</td><td>${ev.vArr.nsUsado}</td></tr>
         <tr><td>Voc en frío del arreglo</td><td>${fmt(ev.vArr.vocFrioV,2)} V (máx. equipo ${fmt(eq.vocMaxV,2)} V)</td><td>Corriente de salida al banco</td><td>${fmt(ev.vCor.iSalidaBancoA,2)} A</td></tr>
-        <tr><td>Isc del generador</td><td>${fmt(ev.vCor.iscGeneradorA,2)} A (máx. equipo ${fmt(eq.iscMaxA,2)} A)</td><td>Corriente de diseño conductores (1,25 × Isc)</td><td>${fmt(ev.vCor.iDisenoConductoresA,2)} A</td></tr>
+        <tr><td>Isc del generador</td><td>${fmt(ev.vCor.iscGeneradorA,2)} A (máx. equipo ${fmt(eq.iscMaxA,2)} A)</td><td>Corriente de diseño conductores (1,25 × 1,25 × Isc)</td><td>${fmt(ev.vCor.iDisenoConductoresA,2)} A</td></tr>
       </tbody></table>`;
       if(ev.fails.length) html += `<div style="font-size:9px;color:#b33;">⚠ ${ev.fails.join(' ')}</div>`;
     } else {
