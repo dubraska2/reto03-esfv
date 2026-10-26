@@ -57,7 +57,11 @@ Auditoría del Reto 03 contra el TdR (métodos de cálculo, RF-25 a RF-36, crite
 - **Uribia (`recurso_solar.js`):** se documentó que el HSP anual 5,8 y el del mes de menor recurso 5,2 son condiciones especificadas en el TdR del Reto 02, no una consulta a PVWatts.
 
 ### Pruebas y documentación
-- **Nuevo:** `pruebas.html` con 59 pruebas automáticas del caso estandarizado: generador, reguladores, bancos AGM y LFP, inversores, comparación de tecnologías y ajuste del balance. La tolerancia es del 1 %.
+- **Nuevo:** `pruebas.html` con 77 pruebas automáticas sobre dos ejemplos de respuesta conocida:
+  - el caso estandarizado del TdR (59 pruebas: generador, reguladores, bancos AGM y LFP, inversores, comparación de tecnologías y ajuste del balance);
+  - el ejemplo 1 de la Sesión 10 (18 pruebas contra las respuestas publicadas por el docente; sistema de 24 V con AGM y LFP de 25,6 V).
+
+  La tolerancia es del 1 %, o igual al redondeo cuando la respuesta publicada viene redondeada.
 - **Nuevo:** README actualizado y este CHANGELOG.
 
 ## v1.2

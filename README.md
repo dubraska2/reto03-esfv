@@ -23,7 +23,7 @@ Incluye cuadro de cargas, perfil horario de 24 h, demanda máxima, energía diar
 | `recurso_solar.js` | Base de datos local con 5 casos guardados de irradiación mensual. |
 | `catalogo_paneles.js` | Catálogo comercial de paneles fotovoltaicos (fichas técnicas STC). |
 | `catalogo_equipos.js` | Catálogo de reguladores MPPT, inversores con entrada MPPT y baterías: los genéricos del TdR del Reto 03 más referencias comerciales con su ficha citada. |
-| `pruebas.html` | Pruebas automáticas del caso estandarizado del Reto 03 (ver [Pruebas automáticas](#pruebas-automáticas)). |
+| `pruebas.html` | Pruebas automáticas de cálculo del Reto 03 con dos ejemplos de respuesta conocida (ver [Pruebas automáticas](#pruebas-automáticas)). |
 | `CHANGELOG.md` | Historial de versiones. |
 
 `index.html` carga los `.js` con rutas relativas, así que todos deben estar en la misma carpeta (y `pvwatts.js` dentro de `api/`).
@@ -153,13 +153,14 @@ Valores que reporta la app con el caso:
 Rama sin almacenamiento: INV-A tiene DC/AC 1,47 y **no cumple** (Imp 13,3 > 12 A, con alerta de recorte); INV-B tiene DC/AC 1,10 y **cumple**; INV-C tiene DC/AC 0,73 y queda en **alerta** por inversor sobredimensionado.
 
 ### Pruebas automáticas
-`pruebas.html` verifica el caso estandarizado de forma automática:
+`pruebas.html` comprueba de forma automática que la app sigue calculando bien. Carga `index.html` sin mostrarlo, le pasa los datos de dos ejemplos con respuesta conocida y compara cada resultado (**77 pruebas**). Marca cada uno con ✓ o ✗ y muestra un resumen. Conviene abrirla después de cada cambio en el código y antes de entregar.
 
-1. Carga `index.html` sin mostrarlo.
-2. Activa el caso de prueba.
-3. Compara **59 resultados** de la app con los valores calculados a mano con las fórmulas del TdR §4, con la tolerancia del 1 % del §8.
+| Ejemplo | Fuente de las respuestas | Qué verifica |
+|---|---|---|
+| 1. Caso estandarizado del TdR (estación de la Alta Guajira, 48 V) | Calculadas a mano con las fórmulas del TdR §4, porque el TdR no publica los valores | 59 resultados: generador, reguladores, bancos AGM y LFP, inversores, comparación de tecnologías y ajuste del balance |
+| 2. Vivienda rural aislada de Santa Marta (Sesión 10, ejemplo 1, 24 V) | **Publicadas por el docente** en las diapositivas de la Sesión 10 (pp. 25–29) | 18 resultados: E<sub>CC</sub>, Cn en Wh y Ah, arreglo 2S4P / 1S4P, Ah y kWh instalados, DoD diario y tasa C de carga, con AGM 12 V y LFP 25,6 V |
 
-Los resultados cubren el generador, los reguladores, los bancos AGM y LFP, los inversores, la comparación de tecnologías y el ajuste del balance. La página marca cada resultado con ✓ o ✗ y muestra un resumen.
+La tolerancia es del 1 %, como admite el TdR §8. Cuando la respuesta publicada viene redondeada (por ejemplo "36 %" o "0,14 C"), se usa una tolerancia igual a ese redondeo, y la tabla la muestra.
 
 Debe abrirse desde un servidor, no con doble clic, porque el navegador bloquea el acceso entre archivos `file://`:
 - En Vercel: `https://<tu-proyecto>.vercel.app/pruebas.html`.
