@@ -38,6 +38,8 @@
        marca, modelo, vocMaxV (tensión máxima de entrada FV [V]),
        iSalidaBancoA (corriente nominal de salida al banco [A]),
        iscMaxA (corriente de cortocircuito FV máxima admisible [A]),
+       tensionesBancoV (opcional: tensiones nominales de banco que admite el
+       equipo, p. ej. [12, 24]; si falta, se asume que admite cualquiera),
        fuente, fechaConsulta
        NOTA: el TdR no publica una "ventana MPPT" propia para los
        reguladores genéricos — solo tensión máxima de entrada y corriente
@@ -97,15 +99,15 @@ window.CATALOGO_REGULADORES = [
     id: "victron-smartsolar-150-100",
     marca: "Victron Energy",
     modelo: "SmartSolar MPPT 150/100-Tr",
-    vocMaxV: 150, iSalidaBancoA: 100, iscMaxA: 75, ventanaMpptMinV: 12,
-    fuente: "Ficha técnica Victron Energy SmartSolar MPPT 150/100-Tr, datasheet publicado por el fabricante.",
-    fechaConsulta: "2026-09-15"
+    vocMaxV: 150, iSalidaBancoA: 100, iscMaxA: 70, ventanaMpptMinV: 12, tensionesBancoV: [12, 24, 36, 48],
+    fuente: "Ficha técnica Victron Energy SmartSolar MPPT 150/85 y 150/100 (\"Max. PV short circuit current: 70 A\"), datasheet publicado por el fabricante.",
+    fechaConsulta: "2026-10-26"
   },
   {
     id: "victron-smartsolar-250-100",
     marca: "Victron Energy",
     modelo: "SmartSolar MPPT 250/100-Tr",
-    vocMaxV: 250, iSalidaBancoA: 100, iscMaxA: 72, ventanaMpptMinV: 12,
+    vocMaxV: 250, iSalidaBancoA: 100, iscMaxA: 70, ventanaMpptMinV: 12, tensionesBancoV: [12, 24, 36, 48],
     fuente: "Ficha técnica Victron Energy SmartSolar MPPT 250/100-Tr, datasheet publicado por el fabricante. Variante de mayor tensión de entrada de la misma línea, para arreglos con más módulos en serie. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
     fechaConsulta: "2026-10-23"
   },
@@ -113,40 +115,40 @@ window.CATALOGO_REGULADORES = [
     id: "epever-tracer-100-30",
     marca: "EPEVER",
     modelo: "Tracer AN 100 V / 30 A (serie MPPT)",
-    vocMaxV: 100, iSalidaBancoA: 30, iscMaxA: 22, ventanaMpptMinV: 12,
-    fuente: "Ficha técnica EPEVER Tracer AN Series MPPT Solar Charge Controller, datasheet publicado por el fabricante.",
-    fechaConsulta: "2026-09-15"
+    vocMaxV: 100, iSalidaBancoA: 30, iscMaxA: 30, ventanaMpptMinV: 12, tensionesBancoV: [12, 24],
+    fuente: "Ficha técnica EPEVER Tracer AN Series (3210AN): Voc máx. 100 V, corriente de carga 30 A, sistema 12/24 V. La ficha no publica una Isc máxima independiente: se limita la Isc del arreglo a la corriente máxima del equipo (30 A).",
+    fechaConsulta: "2026-10-26"
   },
   {
     id: "morningstar-ts-mppt-60",
     marca: "Morningstar",
     modelo: "TriStar MPPT 60",
-    vocMaxV: 150, iSalidaBancoA: 60, iscMaxA: 48, ventanaMpptMinV: 12,
-    fuente: "Ficha técnica Morningstar TriStar MPPT 60, datasheet publicado por el fabricante.",
-    fechaConsulta: "2026-09-15"
+    vocMaxV: 150, iSalidaBancoA: 60, iscMaxA: 60, ventanaMpptMinV: 12, tensionesBancoV: [12, 24, 36, 48],
+    fuente: "Ficha técnica Morningstar TriStar MPPT 60: Voc máx. 150 V, corriente de carga 60 A, sistema 12/24/36/48 V. La ficha no publica una Isc máxima independiente: se limita la Isc del arreglo a la corriente máxima del equipo (60 A).",
+    fechaConsulta: "2026-10-26"
   },
   {
-    id: "phocos-cis-mppt-40",
+    id: "phocos-mppt-100-40",
     marca: "Phocos",
-    modelo: "CIS-MPPT 40",
-    vocMaxV: 150, iSalidaBancoA: 40, iscMaxA: 45, ventanaMpptMinV: 12,
-    fuente: "Ficha técnica Phocos CIS-MPPT N Series, datasheet publicado por el fabricante. Marca ampliamente usada en proyectos de electrificación rural/off-grid en Colombia.",
-    fechaConsulta: "2026-10-23"
+    modelo: "MPPT 100/40",
+    vocMaxV: 95, iSalidaBancoA: 40, iscMaxA: 40, ventanaMpptMinV: 12, tensionesBancoV: [12, 24],
+    fuente: "Ficha técnica Phocos MPPT 100/40: corriente de carga 40 A (máx. de batería 41 A), sistema 12/24 V con reconocimiento automático, Voc máx. del panel 95 V. La ficha no publica una Isc máxima independiente: se limita la Isc del arreglo a la corriente máxima del equipo (40 A). Marca ampliamente usada en proyectos de electrificación rural/off-grid en Colombia.",
+    fechaConsulta: "2026-10-26"
   },
   {
     id: "outback-flexmax-80",
     marca: "Outback Power",
     modelo: "FlexMax 80",
-    vocMaxV: 150, iSalidaBancoA: 80, iscMaxA: 92, ventanaMpptMinV: 12,
-    fuente: "Ficha técnica Outback Power FlexMax 80, datasheet publicado por el fabricante. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
+    vocMaxV: 150, iSalidaBancoA: 80, iscMaxA: 80, ventanaMpptMinV: 12, tensionesBancoV: [12, 24, 36, 48, 60],
+    fuente: "Ficha técnica Outback Power FlexMax 80 (FM80-150VDC): Voc máx. 150 V, corriente de carga 80 A, Isc máx. 80 A, sistema 12/24/36/48/60 V. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
     fechaConsulta: "2026-10-23"
   },
   {
     id: "steca-tarom-mppt-6000",
     marca: "Steca",
     modelo: "Tarom MPPT 6000-M",
-    vocMaxV: 140, iSalidaBancoA: 60, iscMaxA: 66, ventanaMpptMinV: 12,
-    fuente: "Ficha técnica Steca Tarom MPPT 6000-M, datasheet publicado por el fabricante. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
+    vocMaxV: 200, iSalidaBancoA: 60, iscMaxA: 60, ventanaMpptMinV: 12, tensionesBancoV: [12, 24, 36, 48, 60],
+    fuente: "Ficha técnica Steca Tarom MPPT 6000-M: Voc máx. 200 V, corriente de carga 60 A, Isc máx. 60 A, sistema 12–60 V. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
     fechaConsulta: "2026-10-23"
   }
 ];
@@ -183,48 +185,48 @@ window.CATALOGO_INVERSORES = [
     id: "sma-sunny-boy-2.0",
     marca: "SMA",
     modelo: "Sunny Boy 2.0",
-    pacW: 2000, vocMaxV: 600, ventanaMpptMinV: 80, ventanaMpptMaxV: 530, impMaxA: 13.5, iscMaxA: 18,
-    fuente: "Ficha técnica SMA Sunny Boy 1.5/2.0/2.5, datasheet publicado por el fabricante.",
-    fechaConsulta: "2026-09-15"
+    pacW: 2000, vocMaxV: 600, ventanaMpptMinV: 210, ventanaMpptMaxV: 500, impMaxA: 10, iscMaxA: 18,
+    fuente: "Manual SMA Sunny Boy SBxx-1VL-40, datos técnicos del SB2.0-1VL-40: tensión máx. de entrada 600 V, rango MPP 210–500 V, corriente máx. de entrada 10 A, corriente máx. de cortocircuito 18 A.",
+    fechaConsulta: "2026-10-26"
   },
   {
     id: "fronius-primo-3.0-1",
     marca: "Fronius",
     modelo: "Primo 3.0-1",
-    pacW: 3000, vocMaxV: 1000, ventanaMpptMinV: 80, ventanaMpptMaxV: 500, impMaxA: 12.0, iscMaxA: 18,
-    fuente: "Ficha técnica Fronius Primo 3.0-1 a 8.2-1, datasheet publicado por el fabricante.",
-    fechaConsulta: "2026-09-15"
+    pacW: 3000, vocMaxV: 1000, ventanaMpptMinV: 200, ventanaMpptMaxV: 800, impMaxA: 12.0, iscMaxA: 18,
+    fuente: "Ficha técnica Fronius Primo 3.0-1 a 8.2-1: rango de tensión MPP 200–800 V (3.0-1), tensión máx. de entrada 1000 V, corriente máx. de entrada 12 A por seguidor, cortocircuito del arreglo 18 A (versiones posteriores de la ficha indican 24 A; se adopta el menor).",
+    fechaConsulta: "2026-10-26"
   },
   {
     id: "growatt-min-2500tl-x",
     marca: "Growatt",
     modelo: "MIN 2500TL-X",
-    pacW: 2500, vocMaxV: 500, ventanaMpptMinV: 60, ventanaMpptMaxV: 500, impMaxA: 13.5, iscMaxA: 16.5,
-    fuente: "Ficha técnica Growatt MIN 2500-6000TL-X, datasheet publicado por el fabricante. Growatt tiene distribución comercial activa y consolidada en Colombia (aliado estratégico Tronex, garantía extendida a 10 años para inversores on-grid en el país).",
+    pacW: 2500, vocMaxV: 500, ventanaMpptMinV: 80, ventanaMpptMaxV: 500, impMaxA: 12.5, iscMaxA: 16,
+    fuente: "Ficha técnica Growatt MIN 2500-6000TL-X: rango MPPT 80–500 V, corriente máx. de entrada 12,5 A por seguidor, cortocircuito 16 A (las revisiones más recientes indican 13,5 A; se adopta el menor). Growatt tiene distribución comercial activa y consolidada en Colombia (aliado estratégico Tronex, garantía extendida a 10 años para inversores on-grid en el país).",
     fechaConsulta: "2026-09-15"
   },
   {
     id: "huawei-sun2000-3ktl-l1",
     marca: "Huawei",
     modelo: "SUN2000-3KTL-L1",
-    pacW: 3000, vocMaxV: 600, ventanaMpptMinV: 90, ventanaMpptMaxV: 560, impMaxA: 13.5, iscMaxA: 16,
-    fuente: "Ficha técnica Huawei SUN2000-(2KTL-6KTL)-L1, datasheet publicado por el fabricante. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
+    pacW: 3000, vocMaxV: 600, ventanaMpptMinV: 90, ventanaMpptMaxV: 560, impMaxA: 12.5, iscMaxA: 18,
+    fuente: "Especificaciones Huawei SUN2000-3/4/5/6KTL-L1 (solar.huawei.com): tensión máx. de entrada 600 V, rango MPPT 90–560 V, corriente máx. por MPPT 12,5 A, cortocircuito 18 A. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
     fechaConsulta: "2026-10-23"
   },
   {
     id: "solis-mini-s6-3k",
     marca: "Solis",
     modelo: "Mini S6-GR1P3K",
-    pacW: 3000, vocMaxV: 500, ventanaMpptMinV: 60, ventanaMpptMaxV: 480, impMaxA: 13.0, iscMaxA: 15,
-    fuente: "Ficha técnica Solis Mini S6-GR1P(3-6)K, datasheet publicado por el fabricante. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
+    pacW: 3000, vocMaxV: 600, ventanaMpptMinV: 80, ventanaMpptMaxV: 500, impMaxA: 14.0, iscMaxA: 14.0,
+    fuente: "Ficha técnica Solis S6-GR1P(0.6-3.6)K-M: tensión máx. de entrada 600 V, rango MPPT 80–500 V, corriente máx. de entrada 14 A. La Isc máx. no se pudo confirmar: se adopta el valor conservador Isc = Imp máx. = 14 A. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
     fechaConsulta: "2026-10-23"
   },
   {
     id: "goodwe-gw3000-ns",
     marca: "GoodWe",
     modelo: "GW3000-NS",
-    pacW: 3000, vocMaxV: 600, ventanaMpptMinV: 60, ventanaMpptMaxV: 550, impMaxA: 15.0, iscMaxA: 18,
-    fuente: "Ficha técnica GoodWe NS Series GW3000-NS, datasheet publicado por el fabricante. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
+    pacW: 3000, vocMaxV: 500, ventanaMpptMinV: 80, ventanaMpptMaxV: 450, impMaxA: 18.0, iscMaxA: 22.5,
+    fuente: "Ficha técnica GoodWe NS Series (GW3000-NS, un MPPT): tensión máx. de entrada 500 V, rango MPPT 80–450 V, corriente máx. de entrada 18 A, cortocircuito 22,5 A. Marca con distribución comercial activa en Colombia a través de distribuidores/EPC locales.",
     fechaConsulta: "2026-10-23"
   }
 ];
@@ -263,14 +265,16 @@ window.CATALOGO_BATERIAS = [
     fechaConsulta: "2026-09-15"
   },
   {
-    id: "pylontech-force-h2-51-100",
+    // Reemplaza a la Force H2, que es una batería de ALTA tensión (módulos de 96 V / 37 Ah,
+    // pilas de 192–480 V) y no corresponde a un banco de 48 V.
+    id: "pylontech-us5000",
     marca: "Pylontech",
-    modelo: "Force H2 (LFP) 51,2 V / 100 Ah",
+    modelo: "US5000 (LFP) 48 V / 100 Ah",
     tecnologia: "LFP",
-    vUnidadV: 51.2, cUnidadAh: 100, dodDisenoPct: 90, etaIdaVueltaPct: 95,
-    limiteCargaC: 0.5, limiteDescargaC: 1.0, vidaAnios: 10,
-    fuente: "Ficha técnica Pylontech Force H2 High Voltage Battery, datasheet publicado por el fabricante. Marca con amplia distribución comercial en Colombia entre integradores de sistemas fotovoltaicos con almacenamiento.",
-    fechaConsulta: "2026-09-15"
+    vUnidadV: 48, cUnidadAh: 100, dodDisenoPct: 95, etaIdaVueltaPct: 95,
+    limiteCargaC: 0.5, limiteDescargaC: 0.5, vidaAnios: 15,
+    fuente: "Ficha técnica Pylontech US5000: 48 V nominales, 100 Ah (4,8 kWh; 4,56 kWh útiles), DoD 95 %, corriente recomendada de carga/descarga 50 A (0,5 C; máx. 100 A), vida de diseño 15+ años. La ficha no publica la eficiencia de ida y vuelta: se adopta 95 % (≥ 90 % exigido por RETIE para litio). Marca con amplia distribución comercial en Colombia entre integradores de sistemas fotovoltaicos con almacenamiento.",
+    fechaConsulta: "2026-10-26"
   },
   {
     id: "trojan-sagm-12-205",
@@ -295,21 +299,21 @@ window.CATALOGO_BATERIAS = [
   {
     id: "dyness-a48100",
     marca: "Dyness",
-    modelo: "A48100 (LFP) 51,2 V / 100 Ah",
+    modelo: "A48100 (LFP) 48 V / 100 Ah",
     tecnologia: "LFP",
-    vUnidadV: 51.2, cUnidadAh: 100, dodDisenoPct: 95, etaIdaVueltaPct: 95,
-    limiteCargaC: 0.5, limiteDescargaC: 1.0, vidaAnios: 10,
-    fuente: "Ficha técnica Dyness A48 Series (A48100), datasheet publicado por el fabricante. Marca con distribución comercial activa en Colombia a través de integradores de sistemas de almacenamiento.",
+    vUnidadV: 48, cUnidadAh: 100, dodDisenoPct: 90, etaIdaVueltaPct: 95,
+    limiteCargaC: 0.5, limiteDescargaC: 0.75, vidaAnios: 10,
+    fuente: "Ficha técnica Dyness A48100: 48 V nominales (15 celdas LFP), 100 Ah (4,8 kWh), corriente recomendada de carga/descarga 50 A (0,5 C), máxima 75 A (0,75 C), ≥ 6000 ciclos. DoD: la ficha alemana indica 90 % y la francesa 95 %; se adopta el menor. La ficha no publica la eficiencia de ida y vuelta: se adopta 95 % (≥ 90 % RETIE). Marca con distribución comercial activa en Colombia a través de integradores de sistemas de almacenamiento.",
     fechaConsulta: "2026-10-23"
   },
   {
     id: "byd-battery-box-lvs",
     marca: "BYD",
-    modelo: "Battery-Box Premium LVS (módulo 51,2 V / 50 Ah)",
+    modelo: "Battery-Box Premium LVS 4.0 (módulo 51,2 V / 78 Ah)",
     tecnologia: "LFP",
-    vUnidadV: 51.2, cUnidadAh: 50, dodDisenoPct: 95, etaIdaVueltaPct: 96,
-    limiteCargaC: 0.5, limiteDescargaC: 0.5, vidaAnios: 10,
-    fuente: "Ficha técnica BYD Battery-Box Premium LVS, datasheet publicado por el fabricante (módulo apilable de 2,56 kWh a 51,2 V nominal). Marca con distribución comercial activa en Colombia a través de integradores de sistemas de almacenamiento.",
+    vUnidadV: 51.2, cUnidadAh: 78, dodDisenoPct: 96, etaIdaVueltaPct: 95,
+    limiteCargaC: 0.5, limiteDescargaC: 0.83, vidaAnios: 10,
+    fuente: "Ficha técnica BYD Battery-Box Premium LVS: módulo de 4,0 kWh a 51,2 V nominales (≈ 78 Ah), 3,84 kWh útiles (DoD 96 %), eficiencia de ida y vuelta ≥ 95 %, corriente de salida continua máx. 65 A (≈ 0,83 C). La ficha no separa un límite de carga: se adopta 0,5 C (valor conservador). Marca con distribución comercial activa en Colombia a través de integradores de sistemas de almacenamiento.",
     fechaConsulta: "2026-10-23"
   }
 ];

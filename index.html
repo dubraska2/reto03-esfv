@@ -630,8 +630,10 @@ function validateProject(p){
 }
 
 /* ============================ FORMATO ==================================== */
-const fmt = (n, d=2) => (isFinite(n) ? n.toLocaleString('es-CO',{minimumFractionDigits:d,maximumFractionDigits:d}) : '0,00');
-const fmtInt = (n) => (isFinite(n) ? Math.round(n).toLocaleString('es-CO') : '0');
+// Un valor no numérico o infinito (p. ej. una división por una entrada en cero) se muestra
+// como "—" y no como 0, para no presentar un resultado inválido como si fuera real.
+const fmt = (n, d=2) => (typeof n==='number' && isFinite(n) ? n.toLocaleString('es-CO',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—');
+const fmtInt = (n) => (typeof n==='number' && isFinite(n) ? Math.round(n).toLocaleString('es-CO') : '—');
 const hh = (h) => String(h).padStart(2,'0')+':00';
 const money = (n) => '$ ' + fmt(n,2);
 
@@ -2270,10 +2272,33 @@ function defaultFactorTemp(tAmbMin){
   const t = Math.max(0, tAmbMin);
   return Math.max(0.80, 1.0 - (18-t)*(0.20/18));
 }
+// bancState.tensionBancoV es la tensión NOMINAL del sistema de CC (clase 12/24/48 V): con ella
+// se calculan la corriente de salida del regulador y las corrientes de la tasa C, y se fija
+// Ns = Vnominal / Vunidad (TdR §6: "corriente del regulador con 48 V nominales en ambas
+// tecnologías"). La tensión REAL del banco es Ns × Vunidad (48 V con 4 AGM de 12 V; 51,2 V con
+// una LFP de 51,2 V) y es la que se usa para Cn [Ah], la energía instalada y el arranque Vbat+5.
 function defaultBankVoltageForBattery(bateria){
-  // Unidades de 12/24 V se asocian por defecto a un banco de 48 V (estándar off-grid);
-  // unidades de mayor tensión (p.ej. LFP de 51,2 V) se usan directamente como tensión del banco.
-  return bateria.vUnidadV >= 24 ? bateria.vUnidadV : 48;
+  // Unidades de 12 V se asocian por defecto a un sistema de 48 V (estándar off-grid); unidades
+  // de mayor tensión se asocian a la clase nominal más cercana (25,6 V → 24 V; 51,2 V → 48 V).
+  if(bateria.vUnidadV < 24) return 48;
+  return [12,24,48].reduce((a,b)=> Math.abs(b-bateria.vUnidadV)<Math.abs(a-bateria.vUnidadV) ? b : a);
+}
+// Entradas del banco para evaluar una batería del catálogo que puede no ser la elegida: cada
+// tecnología se dimensiona con su propio DoD de diseño de fábrica (AGM 50 %, LFP 80 %...).
+// El DoD que el usuario escribió solo se aplica a la batería elegida, o a todas mientras se
+// busca automáticamente una batería si el usuario lo fijó a mano.
+function opcionesBancoPara(b, usarDodManualParaTodas){
+  const usarDodUsuario = b.id===bancState.bateriaId || (usarDodManualParaTodas && bancState.dodManual);
+  return {
+    vBanco: bancState.tensionBancoManual ? bancState.tensionBancoV : defaultBankVoltageForBattery(b),
+    dodDisenoPct: usarDodUsuario ? bancState.dodDisenoPct : b.dodDisenoPct,
+  };
+}
+function seriePorCadena(vNominal, bateria){ return Math.max(1, Math.round(vNominal/bateria.vUnidadV)); }
+// Tensión real del banco con la batería elegida (Ns × Vunidad); sin batería, la nominal.
+function tensionBancoRealV(){
+  const b = (window.CATALOGO_BATERIAS||[]).find(x=>x.id===bancState.bateriaId);
+  return b ? seriePorCadena(bancState.tensionBancoV, b)*b.vUnidadV : bancState.tensionBancoV;
 }
 function newBancState(){
   const appType = state ? state.appType : 'off-grid';
@@ -2417,7 +2442,7 @@ function computeVerificacionArreglo(gen, equipo, tipo){
   if(tipo==='regulador'){
     // El regulador no publica ventana MPPT propia en el TdR (sección 6): el límite inferior
     // es el arranque (V_banco + 5 V, RF-28) y el superior la propia tensión máxima de entrada.
-    ventanaMinV = bancState.tensionBancoV + 5;
+    ventanaMinV = tensionBancoRealV() + 5;
     ventanaMaxV = vocMaxEquipo;
     origenVentana = `arranque = V_banco + 5 V`;
   } else {
@@ -2444,8 +2469,10 @@ function computeVerificacionCorrientes(gen, equipo, tipo){
   // (ese factor es para conductores y protecciones, NTC 2050 art. 690-8, no para la capacidad
   // del regulador, tal como lo aclara explícitamente el TdR del Reto 03).
   const iSalidaBancoA = cfg.potenciaInstaladaW / bancState.tensionBancoV;
-  const iDisenoConductoresA = cfg.corrienteDisenoA; // ya calculada en el Reto 02 (1,25x1,25xIsc)
   const iscGeneradorA = cfg.corrienteArregloA;       // Np x Isc_módulo
+  // RF-29: corriente de diseño de conductores con el factor 1,25 del TdR (NTC 2050 art. 690-8).
+  // El Reto 02 reporta además 1,25 × 1,25 × Isc (con el factor de servicio continuo).
+  const iDisenoConductoresA = 1.25*iscGeneradorA;
   const impGeneradorA = cfg.panel.imp * cfg.np;
 
   if(tipo==='regulador'){
@@ -2485,12 +2512,18 @@ function evaluarRegulador(gen, equipo){
   if(!vArr.cumpleVentanaMax) fails.push(`Vmp en frío (${fmt(vArr.vmpFrioV,2)} V) supera el máximo admisible (${fmt(vArr.ventanaMaxV,2)} V).`);
   if(!vCor.cumpleSalida) fails.push(`Corriente de salida al banco (${fmt(vCor.iSalidaBancoA,2)} A) supera la corriente nominal de salida del equipo (${fmt(equipo.iSalidaBancoA,2)} A).`);
   if(!vCor.cumpleIsc) fails.push(`Isc del generador (${fmt(vCor.iscGeneradorA,2)} A) supera la Isc máxima admisible del equipo (${fmt(equipo.iscMaxA,2)} A).`);
+  // Tensiones de banco que admite el equipo según su ficha (p. ej. 12/24 V); sin el dato, cualquiera.
+  const vNominal = bancState.tensionBancoV;
+  const cumpleTensionBanco = !Array.isArray(equipo.tensionesBancoV) || equipo.tensionesBancoV.some(v=>Math.abs(v-vNominal)<0.5);
+  if(!cumpleTensionBanco) fails.push(`El equipo solo admite bancos de ${equipo.tensionesBancoV.join('/')} V; el sistema es de ${fmt(vNominal,1)} V.`);
   const veredicto = fails.length ? 'no-cumple' : 'cumple';
   const sugerencia = veredicto!=='no-cumple' ? null
     : (!vArr.cumpleVocMax
         ? 'Reduce el número de módulos en serie (Ns) en el Reto 02 para bajar la Voc del arreglo, o elige un equipo con mayor tensión máxima de entrada.'
-        : 'Elige un equipo con mayor capacidad de corriente de salida/Isc, o reconfigura las cadenas del Reto 02.');
-  return { equipo, vArr, vCor, fails, veredicto, sugerencia };
+        : !cumpleTensionBanco
+          ? 'Elige un equipo que admita la tensión nominal del sistema, o cambia la tensión nominal del sistema a una que admita este equipo.'
+          : 'Elige un equipo con mayor capacidad de corriente de salida/Isc, o reconfigura las cadenas del Reto 02.');
+  return { equipo, vArr, vCor, fails, veredicto, sugerencia, cumpleTensionBanco };
 }
 function evaluarInversor(gen, equipo){
   const vArr = computeVerificacionArreglo(gen, equipo, 'inversor');
@@ -2509,6 +2542,58 @@ function evaluarInversor(gen, equipo){
         ? 'Reduce el número de módulos en serie (Ns) en el Reto 02 para bajar la Voc del arreglo, o elige un equipo con mayor tensión máxima de entrada.'
         : 'Elige un equipo con mayor capacidad de corriente/tensión, o reconfigura las cadenas del Reto 02.');
   return { equipo, vArr, vCor, dcac, fails, veredicto, sugerencia };
+}
+// RF-31: reconfiguración concreta en cadenas del MISMO panel que el equipo sí admitiría.
+// Recorre Ns = 1..Ns máx. (limitado por la Voc del equipo y por la tensión máxima del
+// sistema del Reto 02) con Np = ⌈módulos necesarios / Ns⌉ —la misma regla de
+// computePanelConfig—, y devuelve la que cumple con menos módulos (a igualdad, menor Ns).
+function generadorConCadenas(gen, ns, np){
+  const panel = gen.panel, totalModulos = ns*np;
+  const cfg = Object.assign({}, gen.cfg, {
+    ns, np, totalModulos,
+    potenciaInstaladaW: totalModulos*panel.pMax,
+    vocTotalStringV: ns*gen.cfg.vocFrio,
+    corrienteArregloA: np*panel.isc,
+    corrienteDisenoA: 1.25*1.25*np*panel.isc,
+    areaOcupadaM2: totalModulos*panel.areaM2,
+  });
+  return Object.assign({}, gen, { cfg });
+}
+function reconfiguracionQueCumple(gen, equipo, tipo){
+  const modulos = Math.max(1, Math.ceil(gen.ppicoW/gen.panel.pMax));
+  const nsTope = Math.min(gen.cfg.nsMax, Math.floor(equipo.vocMaxV/gen.cfg.vocFrio));
+  let mejor = null;
+  for(let ns=1; ns<=nsTope; ns++){
+    const np = Math.ceil(modulos/ns);
+    if(ns===gen.cfg.ns && np===gen.cfg.np) continue;
+    const cand = generadorConCadenas(gen, ns, np);
+    const ev = tipo==='regulador' ? evaluarRegulador(cand, equipo) : evaluarInversor(cand, equipo);
+    if(ev.veredicto!=='cumple') continue;
+    if(!mejor || ns*np < mejor.ns*mejor.np) mejor = { ns, np, totalModulos: ns*np, potenciaW: cand.cfg.potenciaInstaladaW };
+  }
+  return mejor;
+}
+function renderReconfiguracion(gen, equipo, tipo, ev){
+  // Solo tiene sentido si lo que falla es el arreglo (no la tensión de banco que admite el equipo)
+  // y si el generador es el del Reto 02 sin ampliar por el balance de cierre.
+  if(ev.cumpleTensionBanco===false || gen.base) return '';
+  const r = reconfiguracionQueCumple(gen, equipo, tipo);
+  if(!r) return `<br><em>Reconfiguración:</em> ninguna combinación serie-paralelo del panel ${escapeHtml(gen.panel.marca)} ${escapeHtml(gen.panel.modelo)} con ${Math.ceil(gen.ppicoW/gen.panel.pMax)} módulos o más cumple con este equipo; elige otro equipo.`;
+  return `<br><em>Reconfiguración:</em> con este equipo cumple el arreglo <strong>${r.ns}s × ${r.np}p</strong> (${r.totalModulos} módulos, ${fmt(r.potenciaW/1000,2)} kWp) del mismo panel.
+    <button class="btn btn-ghost btn-sm" style="margin-left:6px;" data-aplicar-reconfig="${tipo}|${equipo.id}|${r.ns}">Aplicar ${r.ns}s × ${r.np}p y elegir este equipo</button>`;
+}
+// Aplica la reconfiguración sugerida: fija Ns en el Reto 02 (vía panelNsExtra, que
+// computePanelConfig suma al Ns base) y elige el equipo para el que se calculó.
+function aplicarReconfiguracion(tipo, equipoId, ns){
+  const gen = getGeneradorSeleccionado();
+  if(!gen) return;
+  genState.panelNsExtra = ns - gen.cfg.nsBase;
+  genState.seleccionAutomatica = false; // fija panel y cadena: la selección automática del Reto 02 no la reemplaza
+  bancState.ajusteBalance = null;
+  if(tipo==='regulador'){ bancState.reguladorId = equipoId; bancState.seleccionReguladorAutomatica = false; }
+  else { bancState.inversorId = equipoId; bancState.seleccionInversorAutomatica = false; }
+  bancState.ajusteMsg = `Se reconfiguró el arreglo a ${ns} módulos en serie y se eligió "${nombreEquipo(tipo, equipoId)}".`;
+  bancState.configuracionImposible = null;
 }
 function autoSelectReguladorId(gen){
   // Prioriza una referencia comercial real con veredicto "cumple" para el
@@ -2561,14 +2646,14 @@ function computeBancoBaterias(gen, bateria, opts){
   const dod = (o.dodDisenoPct!=null ? o.dodDisenoPct : bancState.dodDisenoPct)/100;
   const fT = o.factorTemp!=null ? o.factorTemp : bancState.factorTemp;
   const N = o.autonomiaDias!=null ? o.autonomiaDias : bancState.autonomiaDias;
-  const vBanco = o.vBanco!=null ? o.vBanco : bancState.tensionBancoV;
+  const vBanco = o.vBanco!=null ? o.vBanco : bancState.tensionBancoV; // tensión nominal del sistema
+  const ns = seriePorCadena(vBanco, bateria);                        // baterías en serie por cadena
+  const vBancoReal = ns*bateria.vUnidadV;                            // tensión real del banco
   const cnWh = (eCCWhDia*N)/(dod*fT);                               // Capacidad nominal del banco [Wh]
-  const cnAh = cnWh/vBanco;                                         // Capacidad nominal del banco [Ah]
-  const ns = Math.max(1, Math.round(vBanco/bateria.vUnidadV));      // baterías en serie por cadena
+  const cnAh = cnWh/vBancoReal;                                     // Capacidad nominal del banco [Ah]
   const np = Math.max(1, Math.ceil(cnAh/bateria.cUnidadAh));        // cadenas en paralelo (unidades enteras)
   const numBaterias = ns*np;
   const ahInstalados = np*bateria.cUnidadAh;
-  const vBancoReal = ns*bateria.vUnidadV;
   const eInstaladaWh = ahInstalados*vBancoReal;                     // Ah instalados x V del banco
   const kwhInstalados = eInstaladaWh/1000;
   const dodFinal = eInstaladaWh>0 ? (eCCWhDia*N)/eInstaladaWh : null;  // DoD real al final de la autonomía
@@ -2588,8 +2673,7 @@ function autoSelectBateriaId(gen){
   const catalogo = window.CATALOGO_BATERIAS||[];
   if(catalogo.length===0) return null;
   const evaluar = (b)=>{
-    const vBanco = bancState.tensionBancoManual ? bancState.tensionBancoV : defaultBankVoltageForBattery(b);
-    const cfg = computeBancoBaterias(gen, b, {vBanco});
+    const cfg = computeBancoBaterias(gen, b, opcionesBancoPara(b, true));
     return { b, cfg, cumple: !cfg.redondeoExcedeDod };
   };
   const comerciales = catalogo.filter(b=>!b.esReferenciaNoComercial).map(evaluar);
@@ -2613,8 +2697,7 @@ function elegirBateriaQueCumpleTasaC(gen){
   const catalogo = window.CATALOGO_BATERIAS||[];
   if(catalogo.length===0) return null;
   const evaluar = (b)=>{
-    const vBanco = bancState.tensionBancoManual ? bancState.tensionBancoV : defaultBankVoltageForBattery(b);
-    const cfg = computeBancoBaterias(gen, b, {vBanco});
+    const cfg = computeBancoBaterias(gen, b, opcionesBancoPara(b, true));
     const tasaC = computeTasaC(gen, cfg);
     const cumple = !cfg.redondeoExcedeDod && tasaC.cumpleCarga!==false && tasaC.cumpleDescarga!==false;
     return { b, cfg, cumple };
@@ -2740,7 +2823,7 @@ function validarEntradasBanco(){
   if(bancState.dodDisenoPct<=0 || bancState.dodDisenoPct>100) warns.push('El DoD de diseño debe estar entre 0% (exclusivo) y 100%.');
   if(bancState.etaInversor<=0 || bancState.etaInversor>1) warns.push('La eficiencia del inversor debe estar entre 0 y 1.');
   if(bancState.factorTemp<=0 || bancState.factorTemp>1) warns.push('El factor de temperatura debe estar entre 0 y 1.');
-  if(bancState.tensionBancoV<=0) warns.push('La tensión del banco debe ser mayor que 0 V.');
+  if(bancState.tensionBancoV<=0) warns.push('La tensión nominal del sistema debe ser mayor que 0 V.');
   const bateria = (window.CATALOGO_BATERIAS||[]).find(b=>b.id===bancState.bateriaId);
   if(bateria && (bateria.etaIdaVueltaPct<=0 || bateria.etaIdaVueltaPct>100)) warns.push('La eficiencia de ida y vuelta de la batería debe estar entre 0% y 100%.');
   return warns;
@@ -2749,9 +2832,11 @@ function validarEntradasBanco(){
 /* --------------------------- RF-35: tasa C y recuperación tras agotar autonomía ---------------- */
 function computeTasaC(gen, cfg){
   const inh = getInheritedData();
-  const iCargaA = cfg.vBancoReal>0 ? gen.cfg.potenciaInstaladaW / cfg.vBancoReal : null; // corriente máx. de carga hacia el banco
+  // Corrientes a la tensión nominal del sistema, la misma con la que se verifica la corriente de
+  // salida del regulador (TdR §6: 48 V nominales en ambas tecnologías).
+  const iCargaA = cfg.vBanco>0 ? gen.cfg.potenciaInstaladaW / cfg.vBanco : null; // corriente máx. de carga hacia el banco
   const tasaCCarga = iCargaA!=null && cfg.ahInstalados>0 ? iCargaA/cfg.ahInstalados : null;
-  const iDescargaA = cfg.vBancoReal>0 ? (inh.pmaxW / cfg.vBancoReal) / bancState.etaInversor : null; // corriente de descarga en la hora de demanda máxima
+  const iDescargaA = cfg.vBanco>0 ? (inh.pmaxW / cfg.vBanco) / bancState.etaInversor : null; // corriente de descarga en la hora de demanda máxima
   const tasaCDescarga = iDescargaA!=null && cfg.ahInstalados>0 ? iDescargaA/cfg.ahInstalados : null;
   const cumpleCarga = tasaCCarga!=null ? tasaCCarga <= cfg.bateria.limiteCargaC : null;
   const cumpleDescarga = (cfg.bateria.limiteDescargaC!=null && tasaCDescarga!=null) ? (tasaCDescarga <= cfg.bateria.limiteDescargaC) : null;
@@ -2771,12 +2856,18 @@ function computeTiempoRecuperacion(gen, cfg){
 }
 function compararTecnologiasEnergiaPorAnio(gen){
   const catalogo = window.CATALOGO_BATERIAS||[];
-  return catalogo.map(b=>{
-    const vBanco = bancState.tensionBancoManual ? bancState.tensionBancoV : defaultBankVoltageForBattery(b);
-    const cfg = computeBancoBaterias(gen, b, {vBanco});
+  const filas = catalogo.map(b=>{
+    const cfg = computeBancoBaterias(gen, b, opcionesBancoPara(b, false));
+    // kWh nominales que hay que instalar (y reponer) por cada año de servicio: MENOR es mejor.
     const energiaPorAnioKWh = b.vidaAnios>0 ? cfg.kwhInstalados/b.vidaAnios : null;
-    return { bateria:b, cfg, energiaPorAnioKWh };
+    // Energía que el banco entrega a las cargas durante su vida (E_CC diaria × 365 × vida).
+    const energiaVidaMWh = b.vidaAnios>0 ? cfg.eCCWhDia*365*b.vidaAnios/1e6 : null;
+    return { bateria:b, cfg, energiaPorAnioKWh, energiaVidaMWh };
   });
+  const validas = filas.filter(f=>f.energiaPorAnioKWh!=null);
+  const mejor = validas.length ? Math.min(...validas.map(f=>f.energiaPorAnioKWh)) : null;
+  filas.forEach(f=>{ f.esMejor = mejor!=null && f.energiaPorAnioKWh!=null && f.energiaPorAnioKWh<=mejor+1e-9; });
+  return filas;
 }
 
 /* --------------------------- RF-34: balance de cierre ------------------------------------------ */
@@ -2967,15 +3058,15 @@ function renderReguladoresPanel(gen){
   <div class="panel">
     <div class="panel-header"><h3>③ Verificación del arreglo y catálogo de reguladores MPPT</h3><span class="hint">RF-27, RF-28, RF-29, RF-31</span></div>
     <div class="grid grid-4">
-      <div class="field"><label>Tensión del banco [V] (&gt; 0)</label><input type="number" id="bf-vBanco" step="0.1" min="0.01" value="${bancState.tensionBancoV}"></div>
+      <div class="field"><label>Tensión nominal del sistema [V] (&gt; 0)</label><input type="number" id="bf-vBanco" step="0.1" min="0.01" value="${bancState.tensionBancoV}"><span class="field-help">Fija la corriente del regulador, la tasa C y Ns. Banco real con la batería elegida: ${fmt(tensionBancoRealV(),1)} V.</span></div>
       <div class="result-card"><div class="rc-label">Voc en frío del arreglo</div><div class="rc-value" style="font-size:15px;">${fmt(vArrSample.vocFrioV,2)}<span class="unit">V</span></div><div class="rc-note">a T<sub>amb,mín</sub>=${fmt(genState.tAmbMin,2)}°C</div></div>
-      <div class="result-card"><div class="rc-label">Vmp en caliente del arreglo</div><div class="rc-value" style="font-size:15px;">${fmt(vArrSample.vmpCalienteV,2)}<span class="unit">V</span></div><div class="rc-note">debe superar el arranque = V<sub>banco</sub>+5 V = ${fmt(bancState.tensionBancoV+5,2)} V</div></div>
+      <div class="result-card"><div class="rc-label">Vmp en caliente del arreglo</div><div class="rc-value" style="font-size:15px;">${fmt(vArrSample.vmpCalienteV,2)}<span class="unit">V</span></div><div class="rc-note">debe superar el arranque = V<sub>banco</sub>+5 V = ${fmt(tensionBancoRealV()+5,2)} V</div></div>
       <div class="result-card"><div class="rc-label">Vmp en frío del arreglo</div><div class="rc-value" style="font-size:15px;">${fmt(vArrSample.vmpFrioV,2)}<span class="unit">V</span></div><div class="rc-note">debe quedar bajo la tensión máx. de entrada del equipo</div></div>
     </div>
     <div class="table-wrap" style="margin-top:14px;">
       <table class="data-table">
         <thead><tr>
-          <th>Equipo</th><th>Voc máx [V]</th><th>I salida banco [A]</th><th>Isc máx [A]</th>
+          <th>Equipo</th><th>Voc máx [V]</th><th>Ns máx.</th><th>I salida banco [A]</th><th>Isc máx [A]</th>
           <th>I salida req. [A]</th><th>Isc gen. [A]</th><th>Veredicto</th><th></th>
         </tr></thead>
         <tbody>
@@ -2986,20 +3077,22 @@ function renderReguladoresPanel(gen){
           return `<tr class="${sel?'selected-row':''}">
             <td>${nombreCelda}</td>
             <td class="mono">${fmt(e.vocMaxV,2)}</td>
+            <td class="mono" style="${ev.vArr.nsUsado>ev.vArr.nsMaxEquipo?'color:var(--danger);':''}">${ev.vArr.nsMaxEquipo}</td>
             <td class="mono">${fmt(e.iSalidaBancoA,2)}</td>
             <td class="mono">${fmt(e.iscMaxA,2)}</td>
             <td class="mono" style="${!ev.vCor.cumpleSalida?'color:var(--danger);':''}">${fmt(ev.vCor.iSalidaBancoA,2)}</td>
             <td class="mono" style="${!ev.vCor.cumpleIsc?'color:var(--danger);':''}">${fmt(ev.vCor.iscGeneradorA,2)}</td>
             <td>${veredictoBadge(ev.veredicto)}</td>
             <td><button class="btn ${sel?'btn-primary':'btn-ghost'} btn-sm" data-select-regulador="${e.id}">${sel?'✓ Elegido':'Elegir'}</button></td>
-          </tr>${ev.fails.length ? `<tr><td colspan="8" style="padding-top:0;"><div class="small-note" style="color:var(--danger);">⚠ ${ev.fails.join(' ')}${ev.sugerencia?('<br><em>Sugerencia:</em> '+escapeHtml(ev.sugerencia)):''}</div></td></tr>` : ''}`;
+          </tr>${ev.fails.length ? `<tr><td colspan="9" style="padding-top:0;"><div class="small-note" style="color:var(--danger);">⚠ ${ev.fails.join(' ')}${ev.sugerencia?('<br><em>Sugerencia:</em> '+escapeHtml(ev.sugerencia)):''}${renderReconfiguracion(gen, e, 'regulador', ev)}</div></td></tr>` : ''}`;
         }).join('')}
         </tbody>
       </table>
     </div>
     <div class="legend-row">
-      <span>I salida al banco = P<sub>pico instalada</sub> / V<sub>banco</sub> (sin el factor 1,25 — ese factor es para conductores/protecciones)</span>
-      <span>I diseño de conductores (690-8): ${fmt(gen.cfg.corrienteDisenoA,2)} A</span>
+      <span>Ns máx. = ⌊V<sub>oc,máx equipo</sub> / V<sub>oc,frío módulo</sub>⌋ (Ns usado: ${gen.cfg.ns})</span>
+      <span>I salida al banco = P<sub>pico instalada</sub> / V<sub>nominal</sub> (sin el factor 1,25 — ese factor es para conductores/protecciones)</span>
+      <span>I diseño de conductores = 1,25 × I<sub>sc,gen</sub> = ${fmt(1.25*gen.cfg.corrienteArregloA,2)} A (factor del TdR, NTC 2050 art. 690-8). Si además se aplica el 1,25 por servicio continuo de 690-8(b): 1,56 × I<sub>sc</sub> = ${fmt(gen.cfg.corrienteDisenoA,2)} A.</span>
     </div>
   </div>`;
 }
@@ -3019,7 +3112,7 @@ function renderInversoresPanel(gen){
     <div class="table-wrap" style="margin-top:14px;">
       <table class="data-table">
         <thead><tr>
-          <th>Equipo</th><th>P<sub>ac</sub> [W]</th><th>Ventana MPPT [V]</th><th>DC/AC</th><th>Imp gen. [A]</th><th>Isc gen. [A]</th><th>Veredicto</th><th></th>
+          <th>Equipo</th><th>P<sub>ac</sub> [W]</th><th>Ventana MPPT [V]</th><th>Ns máx.</th><th>DC/AC</th><th>Imp gen. [A]</th><th>Isc gen. [A]</th><th>Veredicto</th><th></th>
         </tr></thead>
         <tbody>
         ${catalogo.map(e=>{
@@ -3030,17 +3123,18 @@ function renderInversoresPanel(gen){
             <td>${nombreCelda}</td>
             <td class="mono">${fmt(e.pacW,2)}</td>
             <td class="mono">${fmt(e.ventanaMpptMinV,0)}–${fmt(e.ventanaMpptMaxV,0)}</td>
+            <td class="mono" style="${ev.vArr.nsUsado>ev.vArr.nsMaxEquipo?'color:var(--danger);':''}">${ev.vArr.nsMaxEquipo}</td>
             <td class="mono" style="${!ev.dcac.dentroDeRango?'color:var(--warn);':''}">${fmt(ev.dcac.ratio,2)}</td>
             <td class="mono" style="${!ev.vCor.cumpleImp?'color:var(--danger);':''}">${fmt(ev.vCor.impGeneradorA,2)}</td>
             <td class="mono" style="${!ev.vCor.cumpleIsc?'color:var(--danger);':''}">${fmt(ev.vCor.iscGeneradorA,2)}</td>
             <td>${veredictoBadge(ev.veredicto)}</td>
             <td><button class="btn ${sel?'btn-primary':'btn-ghost'} btn-sm" data-select-inversor="${e.id}">${sel?'✓ Elegido':'Elegir'}</button></td>
-          </tr>${(ev.fails.length || ev.dcac.alerta) ? `<tr><td colspan="8" style="padding-top:0;"><div class="small-note" style="color:${ev.fails.length?'var(--danger)':'var(--warn)'};">${ev.fails.length?'⚠ '+ev.fails.join(' '):''} ${ev.dcac.alerta?'⚠ '+escapeHtml(ev.dcac.alerta):''}${ev.sugerencia?('<br><em>Sugerencia:</em> '+escapeHtml(ev.sugerencia)):''}</div></td></tr>` : ''}`;
+          </tr>${(ev.fails.length || ev.dcac.alerta) ? `<tr><td colspan="9" style="padding-top:0;"><div class="small-note" style="color:${ev.fails.length?'var(--danger)':'var(--warn)'};">${ev.fails.length?'⚠ '+ev.fails.join(' '):''} ${ev.dcac.alerta?'⚠ '+escapeHtml(ev.dcac.alerta):''}${ev.sugerencia?('<br><em>Sugerencia:</em> '+escapeHtml(ev.sugerencia)):''}${ev.fails.length?renderReconfiguracion(gen, e, 'inversor', ev):''}</div></td></tr>` : ''}`;
         }).join('')}
         </tbody>
       </table>
     </div>
-    <div class="legend-row"><span>Relación DC/AC = P<sub>pico instalada</sub> / P<sub>ac</sub> · rango configurado: ${fmt(bancState.dcAcMin,2)}–${fmt(bancState.dcAcMax,2)} (PVWatts v8 sugiere 1,2)</span></div>
+    <div class="legend-row"><span>Ns máx. = ⌊V<sub>oc,máx equipo</sub> / V<sub>oc,frío módulo</sub>⌋ (Ns usado: ${gen.cfg.ns})</span><span>I diseño de conductores = 1,25 × I<sub>sc,gen</sub> = ${fmt(1.25*gen.cfg.corrienteArregloA,2)} A (TdR, NTC 2050 art. 690-8)</span><span>Relación DC/AC = P<sub>pico instalada</sub> / P<sub>ac</sub> · rango configurado: ${fmt(bancState.dcAcMin,2)}–${fmt(bancState.dcAcMax,2)} (PVWatts v8 sugiere 1,2)</span></div>
   </div>`;
 }
 
@@ -3102,13 +3196,15 @@ function renderBancoBateriasPanel(gen){
         </tbody>
       </table>
     </div>
-    ${cfg ? renderBancoResultado(gen, cfg) : ''}
+    ${errores.length
+      ? `<div class="small-note" style="margin-top:12px;color:var(--danger);">Corrige las entradas marcadas arriba para ver el dimensionamiento del banco, el balance de cierre y la comparación de tecnologías (RF-32).</div>`
+      : (cfg ? renderBancoResultado(gen, cfg) : '')}
   </div>`;
 }
 
 function renderBalanceCierrePanel(gen){
   const bateria = (window.CATALOGO_BATERIAS||[]).find(b=>b.id===bancState.bateriaId);
-  if(!bateria) return '';
+  if(!bateria || validarEntradasBanco().length) return ''; // RF-32: sin resultados con entradas inválidas
   const cfg = computeBancoBaterias(gen, bateria);
   const bal = computeBalanceCierre(gen, cfg);
   if(bal.pReqAnualW==null){
@@ -3129,6 +3225,7 @@ function renderBalanceCierrePanel(gen){
       <div class="result-card"><div class="rc-label">Margen / déficit vs. promedio anual</div><div class="rc-value" style="color:${deficitAnual?'var(--danger)':'var(--success)'}">${fmt(Math.abs(bal.margenAnualPct),2)}%<span class="unit">${deficitAnual?'déficit':'margen'}</span></div><div class="rc-note">${deficitAnual?('faltan ≈ '+bal.modulosAdicionalesAnual+' módulo(s) adicional(es)'):'cubre la demanda anual promedio'}</div></div>
       <div class="result-card"><div class="rc-label">Margen / déficit vs. mes crítico</div><div class="rc-value" style="color:${deficitCritico?'var(--danger)':'var(--success)'}">${fmt(Math.abs(bal.margenCriticoPct),2)}%<span class="unit">${deficitCritico?'déficit':'margen'}</span></div><div class="rc-note">${deficitCritico?('faltan ≈ '+bal.modulosAdicionalesCritico+' módulo(s) adicional(es)'):'cubre la demanda del mes crítico'}</div></div>
     </div>
+    <div class="legend-row"><span>Margen o déficit [%] = (P<sub>instalada</sub> − P<sub>req</sub>) / P<sub>req</sub> × 100, con P<sub>req</sub> = E<sub>gen</sub> / (HSP × PR) como base. Módulos adicionales = ⌈P<sub>req</sub> / P<sub>módulo</sub>⌉ − módulos instalados.</span></div>
     ${gen.base ? `
     <div class="panel" style="margin-top:12px;border-color:var(--accent);">
       <div class="small-note">${renderAjusteAceptado(gen, bal)}
@@ -3144,26 +3241,30 @@ function renderBalanceCierrePanel(gen){
 }
 
 function renderComparacionTecnologiasPanel(gen){
+  if(validarEntradasBanco().length) return '';
   const comp = compararTecnologiasEnergiaPorAnio(gen);
   if(comp.length<2) return '';
   return `
   <div class="panel">
-    <div class="panel-header"><h3>⑥ Comparación de tecnologías de batería</h3><span class="hint">RF-35 — energía nominal instalada por año de servicio (vida útil declarada)</span></div>
+    <div class="panel-header"><h3>⑥ Comparación de tecnologías de batería</h3><span class="hint">RF-35 — energía nominal por año de servicio y energía entregada en la vida útil</span></div>
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>Tecnología</th><th>Equipo</th><th>kWh instalados</th><th>Vida [años]</th><th>kWh / año de servicio</th></tr></thead>
+        <thead><tr><th>Tecnología</th><th>Equipo</th><th>DoD de diseño</th><th>Configuración</th><th>kWh instalados</th><th>Vida [años]</th><th>kWh / año de servicio</th><th>kWh entregados por kWh instalado</th></tr></thead>
         <tbody>
         ${comp.map(c=>`<tr class="${bancState.bateriaId===c.bateria.id?'selected-row':''}">
           <td><span class="tag tag-none">${c.bateria.tecnologia}</span></td>
           <td>${escapeHtml(c.bateria.marca)} ${escapeHtml(c.bateria.modelo)}</td>
+          <td class="mono">${fmt(c.cfg.dod*100,0)}%</td>
+          <td class="mono">${c.cfg.ns}s × ${c.cfg.np}p</td>
           <td class="mono">${fmt(c.cfg.kwhInstalados,2)}</td>
           <td class="mono">${fmt(c.bateria.vidaAnios,0)}</td>
-          <td class="mono">${c.energiaPorAnioKWh!=null?fmt(c.energiaPorAnioKWh,2):'—'}</td>
+          <td class="mono" style="${c.esMejor?'color:var(--success);font-weight:700;':''}">${c.energiaPorAnioKWh!=null?fmt(c.energiaPorAnioKWh,2):'—'}${c.esMejor?' ✓':''}</td>
+          <td class="mono">${c.energiaVidaMWh!=null && c.cfg.kwhInstalados>0?fmt(c.energiaVidaMWh*1000/c.cfg.kwhInstalados,0):'—'}</td>
         </tr>`).join('')}
         </tbody>
       </table>
     </div>
-    <div class="small-note" style="margin-top:8px;">Mayor energía nominal por año de servicio = mejor aprovechamiento de la inversión en baterías a lo largo de su vida útil declarada por el fabricante (no incluye análisis de costo, fuera del alcance de este componente).</div>
+    <div class="small-note" style="margin-top:8px;">"kWh / año de servicio" = kWh nominales instalados ÷ vida útil: es la capacidad que hay que comprar (y reponer) por cada año de operación, así que <strong>menor es mejor</strong> (✓). "kWh entregados por kWh instalado" = E<sub>CC</sub> × 365 × vida ÷ kWh instalados: cuánta energía entrega cada kWh comprado durante su vida, <strong>mayor es mejor</strong>; es la comparación justa de la sesión 10 (por kWh entregado, no por kWh instalado). Cada tecnología se dimensiona con su propio DoD de diseño. No incluye costos (fuera del alcance de este componente).</div>
   </div>`;
 }
 
@@ -3196,13 +3297,16 @@ function buildBancoReportSection(){
         <tr><td>Regulador seleccionado</td><td colspan="3">${escapeHtml(eq.marca)} ${escapeHtml(eq.modelo)} — ${veredictoBadge(ev.veredicto)}</td></tr>
         <tr><td>Módulos máx. en serie admitidos</td><td>${ev.vArr.nsMaxEquipo}</td><td>Ns usado</td><td>${ev.vArr.nsUsado}</td></tr>
         <tr><td>Voc en frío del arreglo</td><td>${fmt(ev.vArr.vocFrioV,2)} V (máx. equipo ${fmt(eq.vocMaxV,2)} V)</td><td>Corriente de salida al banco</td><td>${fmt(ev.vCor.iSalidaBancoA,2)} A</td></tr>
-        <tr><td>Isc del generador</td><td>${fmt(ev.vCor.iscGeneradorA,2)} A (máx. equipo ${fmt(eq.iscMaxA,2)} A)</td><td>Corriente de diseño conductores</td><td>${fmt(ev.vCor.iDisenoConductoresA,2)} A</td></tr>
+        <tr><td>Isc del generador</td><td>${fmt(ev.vCor.iscGeneradorA,2)} A (máx. equipo ${fmt(eq.iscMaxA,2)} A)</td><td>Corriente de diseño conductores (1,25 × Isc)</td><td>${fmt(ev.vCor.iDisenoConductoresA,2)} A</td></tr>
       </tbody></table>`;
       if(ev.fails.length) html += `<div style="font-size:9px;color:#b33;">⚠ ${ev.fails.join(' ')}</div>`;
     } else {
       html += `<div style="font-size:9px;color:#b33;">⚠ Ningún regulador del catálogo admite el arreglo del Reto 02 (RF-31/RF-34). Se sugiere agregar un equipo de mayor capacidad de tensión/corriente al catálogo, o reconfigurar las cadenas del Reto 02.</div>`;
     }
-    if(bateria){
+    const erroresBanco = validarEntradasBanco();
+    if(bateria && erroresBanco.length){
+      html += `<div style="font-size:9px;color:#b33;margin-top:6px;">⚠ El banco de baterías no se calculó porque hay entradas fuera de rango: ${erroresBanco.map(escapeHtml).join(' ')}</div>`;
+    } else if(bateria){
       const cfg = computeBancoBaterias(gen, bateria);
       const bal = computeBalanceCierre(gen, cfg);
       const tasaC = computeTasaC(gen, cfg);
@@ -3219,7 +3323,7 @@ function buildBancoReportSection(){
         const deficitAnual = bal.margenAnualPct<0, deficitCritico = bal.margenCriticoPct<0;
         html += `<table style="margin-top:6px;"><tbody>
           <tr><td>Balance de cierre — P. pico requerida (anual / mes crítico)</td><td colspan="3">${fmt(bal.pReqAnualW/1000,2)} / ${fmt(bal.pReqCriticoW/1000,2)} kWp (instalada: ${fmt(bal.instaladaW/1000,2)} kWp)</td></tr>
-          <tr><td>Margen / déficit anual</td><td>${fmt(Math.abs(bal.margenAnualPct),2)}% ${deficitAnual?'déficit':'margen'}</td><td>Margen / déficit mes crítico</td><td>${fmt(Math.abs(bal.margenCriticoPct),2)}% ${deficitCritico?'déficit':'margen'}</td></tr>
+          <tr><td>Margen / déficit anual (base: P<sub>req</sub>)</td><td>${fmt(Math.abs(bal.margenAnualPct),2)}% ${deficitAnual?'déficit':'margen'}</td><td>Margen / déficit mes crítico</td><td>${fmt(Math.abs(bal.margenCriticoPct),2)}% ${deficitCritico?'déficit':'margen'}</td></tr>
         </tbody></table>`;
         if(deficitAnual || deficitCritico) html += `<div style="font-size:9px;color:#b33;">⚠ Déficit de generación frente al balance de cierre; se sugieren ${Math.max(bal.modulosAdicionalesAnual||0,bal.modulosAdicionalesCritico||0)} módulo(s) adicional(es).</div>`;
       }
@@ -3913,6 +4017,10 @@ function attachRootEvents(){
     const bat = (window.CATALOGO_BATERIAS||[]).find(x=>x.id===bancState.bateriaId);
     if(bat && !bancState.tensionBancoManual){ bancState.tensionBancoV = defaultBankVoltageForBattery(bat); }
     render();
+  }));
+  app.querySelectorAll('[data-aplicar-reconfig]').forEach(b=> b.addEventListener('click', ()=>{
+    const [tipo, id, ns] = b.dataset.aplicarReconfig.split('|');
+    aplicarReconfiguracion(tipo, id, parseInt(ns,10)); render();
   }));
   app.querySelector('#btnAceptarAjusteBalance')?.addEventListener('click', ()=>{ aceptarAjusteBalance(); render(); });
   app.querySelector('#btnDeshacerAjusteBalance')?.addEventListener('click', ()=>{ deshacerAjusteBalance(); render(); });
