@@ -1388,8 +1388,10 @@ function activarCasoPrueba(){
   };
   genState.lat = 12.18; genState.lon = -71.28; genState.tilt = 12; genState.azimuth = 180;
   genState.casoGuardadoId = 'uribia';
-  genState.PR = 0.70;
-  genState.vMaxSistema = 600;
+  // PR y tensión máxima son datos declarados por el TdR: se marcan como fijados para que un
+  // cambio posterior del tipo de aplicación no los reemplace por los valores típicos.
+  genState.PR = 0.70; genState.prManual = true;
+  genState.vMaxSistema = 600; genState.vMaxManual = true;
   genState.tAmbMin = 20; genState.tAmbOperacion = 32;
   genState.areaDisponible = 20;
   genState.ventanaInicio = 6; genState.ventanaFin = 18;
@@ -1452,6 +1454,10 @@ function localFallbackRecurso(lat, lon, detalle){
   if(!caso){
     return { fuente:'local', hspMensual:Array(12).fill(4.5), hspAnual:4.5, casoNombre:'(sin datos locales)', detalle: detalle||'Sin conexión y sin casos locales disponibles.' };
   }
+  return recursoDesdeCaso(caso, detalle);
+}
+// Recurso solar tomado tal cual de un caso de la base de datos local (sin consultar la API).
+function recursoDesdeCaso(caso, detalle){
   const hspAnual = caso.hspAnual!=null ? caso.hspAnual : (caso.hspMensual.reduce((a,b)=>a+b,0)/12);
   return {
     fuente:'local', hspMensual: caso.hspMensual.slice(), hspAnual, casoNombre: caso.nombre,
@@ -1461,19 +1467,20 @@ function localFallbackRecurso(lat, lon, detalle){
     consultadoEn: caso.fechaConsulta ? (caso.fechaConsulta+'T00:00:00') : new Date().toISOString()
   };
 }
+async function fetchConTiempoLimite(url, timeoutMs){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeoutMs);
+  try{ return await fetch(url, { method:'GET', signal: controller.signal }); }
+  finally { clearTimeout(timer); }
+}
 async function fetchPVWatts(lat, lon, tilt, azimuth){
   const key = `${lat.toFixed(3)},${lon.toFixed(3)},${tilt},${azimuth}`;
   if(pvwattsCache[key]) return pvwattsCache[key];
-  if(!window.CONFIG || !window.CONFIG.API_KEY){
-    throw new Error('window.CONFIG.API_KEY no está definido (config.js no se cargó correctamente).');
+  if(!window.CONFIG){
+    throw new Error('window.CONFIG no está definido (config.js no se cargó correctamente).');
   }
   const d = window.CONFIG.PVWATTS_DEFAULTS || {};
-  const baseUrl = window.CONFIG.PVWATTS_BASE_URL;
-  // Estructura de la petición tal como la documenta NREL: una sola URL GET con
-  // la clave de API como parámetro "api_key" (no por cabecera). La clave se lee
-  // exclusivamente de config.js (window.CONFIG.API_KEY), nunca escrita aquí.
   const params = new URLSearchParams({
-    api_key: window.CONFIG.API_KEY,
     lat: String(lat), lon: String(lon),
     system_capacity: String(d.system_capacity ?? 4),
     tilt: String(tilt), azimuth: String(azimuth),
@@ -1481,24 +1488,30 @@ async function fetchPVWatts(lat, lon, tilt, azimuth){
     module_type: String(d.module_type ?? 0),
     losses: String(d.losses ?? 14.08),
   });
-  const targetUrl = `${baseUrl}?${params.toString()}`;
-  // Se enruta a través de un proxy CORS público (corsproxy.io) para evitar los
-  // bloqueos de CORS/origen "null" que el navegador impone al consultar la API
-  // de NREL directamente desde un archivo abierto con file:// o desde ciertas
-  // redes. La URL real de PVWatts (con la clave y las coordenadas) viaja intacta
-  // como parámetro "url" dentro de la petición al proxy.
-  const url = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
-  const controller = new AbortController();
-  const timeoutMs = window.CONFIG.PVWATTS_TIMEOUT_MS || 9000;
-  const timer = setTimeout(()=>controller.abort(), timeoutMs);
-  let resp;
-  try{
-    resp = await fetch(url, { method: "GET", signal: controller.signal });
-  } catch(err){
-    clearTimeout(timer);
-    throw new Error(err.name==='AbortError' ? 'Tiempo de espera agotado consultando PVWatts.' : ('Error de red: '+err.message));
+  const timeoutMs = window.CONFIG.PVWATTS_TIMEOUT_MS || 30000;
+  // 1) En Vercel, la función /api/pvwatts agrega la clave personal desde la variable de
+  //    entorno NREL_API_KEY: la clave nunca está en el repositorio ni en el navegador.
+  // 2) Si esa función no existe (archivo abierto con file://, servidor local) o no tiene
+  //    clave configurada, se consulta la API directamente con window.CONFIG.API_KEY
+  //    (DEMO_KEY, la clave pública de NREL; developer.nlr.gov acepta CORS desde cualquier origen).
+  let resp = null;
+  if(location.protocol.startsWith('http')){
+    try{
+      const r = await fetchConTiempoLimite(`api/pvwatts?${params}`, timeoutMs);
+      if(r.status!==404 && r.status!==503) resp = r;
+    } catch(err){
+      if(err.name==='AbortError') throw new Error('Tiempo de espera agotado consultando PVWatts.');
+    }
   }
-  clearTimeout(timer);
+  if(!resp){
+    if(!window.CONFIG.API_KEY) throw new Error('window.CONFIG.API_KEY no está definido en config.js.');
+    params.set('api_key', window.CONFIG.API_KEY);
+    try{
+      resp = await fetchConTiempoLimite(`${window.CONFIG.PVWATTS_BASE_URL}?${params}`, timeoutMs);
+    } catch(err){
+      throw new Error(err.name==='AbortError' ? 'Tiempo de espera agotado consultando PVWatts.' : ('Error de red: '+err.message));
+    }
+  }
   if(!resp.ok){
     throw new Error(`PVWatts respondió con código HTTP ${resp.status}.`);
   }
@@ -1512,38 +1525,87 @@ async function fetchPVWatts(lat, lon, tilt, azimuth){
   }
   const hspMensual = data.outputs.solrad_monthly.map(v=>Number(v)||0);
   const hspAnual = Number(data.outputs.solrad_annual) || (hspMensual.reduce((a,b)=>a+b,0)/12);
+  // PVWatts no devuelve el municipio fuera de EE. UU. (city suele venir vacío), pero sí el
+  // departamento/estado y el país de la celda NSRDB usada: se guardan como respaldo del nombre.
+  const st = data.station_info || {};
+  const ubicacionApi = [st.city, st.state, st.country].filter(Boolean).join(', ') || null;
   const result = {
     fuente:'api', hspMensual, hspAnual, tilt, azimuth,
     casoNombre: `Lat ${lat.toFixed(3)}, Lon ${lon.toFixed(3)} (PVWatts/NSRDB)`,
+    ubicacion: ubicacionApi,
+    distanciaCeldaKm: st.distance!=null ? Number(st.distance)/1000 : null,
     consultadoEn: new Date().toISOString()
   };
   pvwattsCache[key] = result;
   return result;
 }
+// Nombre del lugar consultado ("Municipio, Departamento, País") por geocodificación inversa
+// de OpenStreetMap (Nominatim): sirve para cualquier coordenada, sin clave de API. Si falla,
+// devuelve null y se usa el departamento/país que reporta PVWatts.
+async function fetchNombreUbicacion(lat, lon){
+  const params = new URLSearchParams({ format:'jsonv2', lat:String(lat), lon:String(lon), zoom:'10', 'accept-language':'es' });
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 8000);
+  try{
+    const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, { signal: controller.signal });
+    if(!resp.ok) return null;
+    const data = await resp.json();
+    const a = data.address || {};
+    const municipio = a.city || a.town || a.village || a.municipality || a.county || null;
+    const completo = [municipio, a.state, a.country].filter(Boolean).join(', ');
+    return completo ? { ciudad: municipio || a.state || a.country, completo } : null;
+  } catch(err){
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 async function consultarRecursoSolar(){
+  // Con un caso guardado seleccionado se usan sus datos de la base local tal cual, sin
+  // consultar la API; la API solo se consulta con "Coordenadas manuales".
+  const casoSel = genState.casoGuardadoId
+    ? ((window.BASE_DATOS_SOLAR && window.BASE_DATOS_SOLAR.casos) || []).find(c=>c.id===genState.casoGuardadoId)
+    : null;
+  if(casoSel){
+    genState.recurso = Object.assign(recursoDesdeCaso(casoSel, null), { seleccionado:true, ubicacion: casoSel.nombre });
+    toast(`Recurso solar tomado de la base de datos local (${casoSel.nombre}).`, 'success');
+    reabrirSeleccionTrasRecurso();
+    render();
+    return;
+  }
   genState.cargandoAPI = true;
   render();
   try{
-    const r = await fetchPVWatts(genState.lat, genState.lon, genState.tilt, genState.azimuth);
-    genState.recurso = r;
-    toast('Recurso solar obtenido desde la API de PVWatts.', 'success');
+    const lat = genState.lat, lon = genState.lon;
+    const [r, nombre] = await Promise.all([
+      fetchPVWatts(lat, lon, genState.tilt, genState.azimuth),
+      fetchNombreUbicacion(lat, lon),
+    ]);
+    genState.recurso = Object.assign({}, r, {
+      ubicacion: nombre ? nombre.completo : r.ubicacion,
+      ciudad: nombre ? nombre.ciudad : r.ubicacion,
+    });
+    toast(`Recurso solar obtenido desde la API de PVWatts${genState.recurso.ubicacion?` para ${genState.recurso.ubicacion}`:''}.`, 'success');
   } catch(err){
     genState.recurso = localFallbackRecurso(genState.lat, genState.lon, err.message);
     toast('No se pudo consultar PVWatts (' + err.message + '). Se usaron datos locales de respaldo.', 'error');
   } finally {
     genState.cargandoAPI = false;
-    genState.panelSeleccionadoId = null; genState.seleccionAutomatica = true; genState.panelNsExtra = 0;
-    // El arreglo/potencia pico acaba de recalcularse: cualquier regulador/inversor/batería
-    // ya elegido pudo quedar sin cumplir contra el nuevo arreglo. Se reabre la selección
-    // automática (sin tocar una elección manual del usuario) para que Regulador/Baterías
-    // vuelva a buscar equipo+batería que cumplan, en la rama que corresponda.
-    if(bancState){
-      if(bancState.seleccionReguladorAutomatica) bancState.reguladorId = null;
-      if(bancState.seleccionInversorAutomatica) bancState.inversorId = null;
-      if(bancState.seleccionBateriaAutomatica) bancState.bateriaId = null;
-      bancState.ajusteMsg = null; bancState.configuracionImposible = null;
-    }
+    reabrirSeleccionTrasRecurso();
     render();
+  }
+}
+function reabrirSeleccionTrasRecurso(){
+  genState.panelSeleccionadoId = null; genState.seleccionAutomatica = true; genState.panelNsExtra = 0;
+  // El arreglo/potencia pico acaba de recalcularse: cualquier regulador/inversor/batería
+  // ya elegido pudo quedar sin cumplir contra el nuevo arreglo. Se reabre la selección
+  // automática (sin tocar una elección manual del usuario) para que Regulador/Baterías
+  // vuelva a buscar equipo+batería que cumplan, en la rama que corresponda.
+  if(bancState){
+    if(bancState.seleccionReguladorAutomatica) bancState.reguladorId = null;
+    if(bancState.seleccionInversorAutomatica) bancState.inversorId = null;
+    if(bancState.seleccionBateriaAutomatica) bancState.bateriaId = null;
+    bancState.ajusteMsg = null; bancState.configuracionImposible = null;
   }
 }
 function hspSeleccionado(){
@@ -1948,12 +2010,14 @@ function renderRecursoSolarPanel(hsp){
       <div class="field" style="grid-column:span 3;">
         <label>Caso guardado</label>
         <select id="gf-casoGuardado">
-          <option value="">— Coordenadas manuales —</option>
+          <option value="">— Coordenadas manuales —${(!genState.casoGuardadoId && r && r.fuente==='api')
+            ? `: ${escapeHtml(r.ciudad||r.ubicacion||'ubicación sin nombre')} (${fmt(r.hspAnual,2)} HSP · ${r.tilt}°/${r.azimuth}°)` : ''}</option>
           ${casos.map(c=>`<option value="${c.id}" ${genState.casoGuardadoId===c.id?'selected':''}>${escapeHtml(c.nombre)} (${fmt(c.hspAnual,2)} HSP · ${c.tilt}°/${c.azimuth}°)</option>`).join('')}
         </select>
       </div>
-      <div style="display:flex;align-items:flex-end;">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:4px;">
         <button class="btn btn-primary" id="btnConsultarSolar" style="width:100%;" ${genState.cargandoAPI?'disabled':''}>${genState.cargandoAPI?'Consultando…':'☀ Consultar recurso solar'}</button>
+        <span class="field-help" style="text-align:center;">${genState.casoGuardadoId?'Fuente: base de datos local':'Fuente: API PVWatts'}</span>
       </div>
     </div>
 
@@ -1969,13 +2033,14 @@ function renderRecursoResultado(r, hsp){
   const fechaTxt = r.consultadoEn ? new Date(r.consultadoEn).toLocaleString('es-CO') : '—';
   return `
   <div style="margin-top:14px;">
-    ${isLocal ? `<div class="hour-detail" style="border-color:var(--warn);margin-top:0;margin-bottom:12px;">
+    ${isLocal && r.seleccionado ? `<div class="small-note" style="margin-bottom:10px;color:var(--success);">✓ Datos de la base de datos local para el caso guardado <strong style="color:var(--text)">${escapeHtml(r.casoNombre)}</strong> · inclinación ${r.tilt}°, azimut ${r.azimuth}°. No se consultó la API (para consultarla, elige "Coordenadas manuales").</div>`
+      : isLocal ? `<div class="hour-detail" style="border-color:var(--warn);margin-top:0;margin-bottom:12px;">
         <strong style="color:var(--warn);">⚠ Usando datos locales de respaldo (RF-15).</strong>
         <div class="small-note" style="margin-top:4px;">${escapeHtml(r.detalle||'')} Se usó el caso guardado más cercano a la coordenada declarada: <strong style="color:var(--text)">${escapeHtml(r.casoNombre)}</strong> (inclinación ${r.tilt}°, azimut ${r.azimuth}°).</div>
         <div class="small-note" style="margin-top:2px;">${escapeHtml(r.fuenteTexto||'')}</div>
       </div>`
-      : `<div class="small-note" style="margin-bottom:10px;color:var(--success);">✓ Datos obtenidos en línea desde PVWatts (NREL/NSRDB) para ${escapeHtml(r.casoNombre)} · inclinación ${r.tilt}°, azimut ${r.azimuth}°.</div>`}
-    <div class="small-note" style="margin-bottom:10px;">Fuente: <strong style="color:var(--text)">${isLocal?'Base de datos local':'API PVWatts (NREL/NSRDB)'}</strong> · Fecha de consulta: <strong style="color:var(--text)">${fechaTxt}</strong></div>
+      : `<div class="small-note" style="margin-bottom:10px;color:var(--success);">✓ Datos obtenidos en línea desde PVWatts (NREL/NSRDB) para <strong style="color:var(--text)">${escapeHtml(r.ubicacion||'ubicación sin nombre')}</strong> · ${escapeHtml(r.casoNombre)} · inclinación ${r.tilt}°, azimut ${r.azimuth}°${r.distanciaCeldaKm!=null?` · celda NSRDB a ${fmt(r.distanciaCeldaKm,1)} km`:''}.</div>`}
+    <div class="small-note" style="margin-bottom:10px;">Ubicación: <strong style="color:var(--text)">${escapeHtml(r.ubicacion||r.casoNombre||'—')}</strong> · Fuente: <strong style="color:var(--text)">${isLocal?'Base de datos local':'API PVWatts (NREL/NSRDB)'}</strong> · Fecha de consulta: <strong style="color:var(--text)">${fechaTxt}</strong></div>
 
     <div class="grid grid-2">
       <div>
@@ -2010,8 +2075,8 @@ function renderRecursoResultado(r, hsp){
         </div>
         <div class="result-card">
           <div class="rc-label"> Irradiación media anual (GTI)</div>
-          <div class="rc-value">${hsp?fmt(hsp.valor,2):'—'}<span class="unit">kWh/mˆ2/día</span></div>
-          <div class="rc-note">${hsp?hsp.etiqueta:''}</div>
+          <div class="rc-value">${fmt(r.hspAnual,2)}<span class="unit">kWh/mˆ2/día</span></div>
+          <div class="rc-note">${hsp?`HSP usado para dimensionar: ${fmt(hsp.valor,2)} (${hsp.etiqueta})`:''}</div>
         </div>
       </div>
     </div>
@@ -2176,6 +2241,9 @@ function ramaSugerida(appType){
 // - Híbrido off-grid: tiene banco de baterías que se puede cargar desde la red o desde
 //   el generador, pero NO entrega energía a la red (no hay inyección) → igual que
 //   off-grid, solo "con almacenamiento" tiene sentido; "sin almacenamiento" se deshabilita.
+function casoPruebaActivo(){
+  return !!(genState && genState.overrideCasoPrueba);
+}
 function ramaSinAlmacenamientoDeshabilitada(appType){
   return appType==='off-grid' || appType==='hibrido-offgrid';
 }
@@ -2224,7 +2292,8 @@ function newBancState(){
     bateriaId: null, seleccionBateriaAutomatica: true,
     reguladorId: null, seleccionReguladorAutomatica: true,
     inversorId: null, seleccionInversorAutomatica: true,
-    aceptarAjusteBalance: false,
+    // RF-34: ajuste aceptado del balance de cierre — {firma, npExtra, modsBalance} o null.
+    ajusteBalance: null,
     // Mensaje corto que describe el último cambio aplicado por el botón "Ajustar
     // automáticamente" (RF-28/30/31 extendido) — null si no se ha pulsado o si el
     // estado ya cambió por otra vía (cambio de rama, panel, carga, etc.).
@@ -2261,7 +2330,7 @@ function activarCasoPruebaReto3(){
   bancState.tensionBancoManual = true;
   bancState.reguladorId = null; bancState.seleccionReguladorAutomatica = true;
   bancState.inversorId = null; bancState.seleccionInversorAutomatica = true;
-  bancState.aceptarAjusteBalance = false;
+  bancState.ajusteBalance = null;
 }
 function desactivarCasoPruebaReto3(){
   desactivarCasoPrueba();
@@ -2276,6 +2345,59 @@ function getGeneradorSeleccionado(){
   const cfg = computePanelConfig(panel, ppicoW, genState.panelNsExtra||0);
   if(cfg.descartado) return null;
   return { panel, cfg, ppicoW };
+}
+// RF-34: cuando el usuario acepta el ajuste del balance de cierre, el Reto 03 trabaja con el
+// generador del Reto 02 ampliado en cadenas completas en paralelo (mismo Ns, más Np), y TODO
+// el componente (verificación de equipos, corrientes, banco, tasa C, recuperación, balance e
+// informe) se recalcula con ese generador. El ajuste queda atado a la configuración del
+// Reto 02 sobre la que se aceptó: si esa configuración cambia, el ajuste deja de aplicarse.
+function firmaGenerador(gen){ return `${gen.panel.id}|${gen.cfg.ns}|${gen.cfg.np}`; }
+function ampliarGenerador(gen, npExtra){
+  const np = gen.cfg.np + npExtra;
+  const totalModulos = gen.cfg.ns*np;
+  const cfg = Object.assign({}, gen.cfg, {
+    np, totalModulos,
+    potenciaInstaladaW: totalModulos*gen.panel.pMax,
+    corrienteArregloA: np*gen.panel.isc,
+    corrienteDisenoA: 1.25*1.25*np*gen.panel.isc,
+    areaOcupadaM2: totalModulos*gen.panel.areaM2,
+  });
+  return Object.assign({}, gen, { cfg, base: gen, npExtra });
+}
+function ajusteBalanceVigente(gen){
+  const aj = bancState.ajusteBalance;
+  return !!(gen && aj && bancState.rama==='con-almacenamiento' && aj.firma===firmaGenerador(gen));
+}
+function getGeneradorReto3(){
+  const gen = getGeneradorSeleccionado();
+  if(!ajusteBalanceVigente(gen)) return gen;
+  return ampliarGenerador(gen, bancState.ajusteBalance.npExtra);
+}
+// Cadenas completas que hay que añadir para cubrir el mayor de los dos déficits (anual o mes crítico).
+function npExtraParaBalance(gen, bal){
+  const mods = Math.max(bal.modulosAdicionalesAnual||0, bal.modulosAdicionalesCritico||0);
+  return Math.max(0, Math.ceil((gen.cfg.totalModulos+mods)/gen.cfg.ns) - gen.cfg.np);
+}
+function reabrirSeleccionEquiposReto3(){
+  if(bancState.seleccionReguladorAutomatica) bancState.reguladorId = null;
+  if(bancState.seleccionInversorAutomatica) bancState.inversorId = null;
+}
+function aceptarAjusteBalance(){
+  const gen = getGeneradorSeleccionado();
+  const bateria = (window.CATALOGO_BATERIAS||[]).find(b=>b.id===bancState.bateriaId);
+  if(!gen || !bateria) return;
+  const bal = computeBalanceCierre(gen, computeBancoBaterias(gen, bateria));
+  const npExtra = npExtraParaBalance(gen, bal);
+  if(npExtra<=0) return;
+  bancState.ajusteBalance = {
+    firma: firmaGenerador(gen), npExtra,
+    modsBalance: Math.max(bal.modulosAdicionalesAnual||0, bal.modulosAdicionalesCritico||0),
+  };
+  reabrirSeleccionEquiposReto3();
+}
+function deshacerAjusteBalance(){
+  bancState.ajusteBalance = null;
+  reabrirSeleccionEquiposReto3();
 }
 
 /* --------------------------- RF-28: verificación de tensiones del arreglo --------------------- */
@@ -2547,7 +2669,7 @@ function mensajeConfiguracionImposible(esCon){
 // combinación válida, deja un mensaje explicando que no es posible con lo disponible.
 function ajustarParaCumplir(){
   const ppicoW = computePpicoW();
-  let gen = getGeneradorSeleccionado();
+  let gen = getGeneradorReto3(); // incluye el ajuste del balance de cierre, si fue aceptado
   if(!gen || ppicoW==null) return;
   const esCon = bancState.rama==='con-almacenamiento';
   const panelAntes = gen.panel, nsAntes = gen.cfg.ns, npAntes = gen.cfg.np;
@@ -2591,6 +2713,7 @@ function ajustarParaCumplir(){
     genState.panelSeleccionadoId = seleccionPanel.id;
     genState.seleccionAutomatica = true;
     genState.panelNsExtra = seleccionPanel.nsExtra;
+    bancState.ajusteBalance = null; // el arreglo cambió: el ajuste del balance ya no corresponde
     gen = getGeneradorSeleccionado();
     bancState.configuracionImposible = null;
     if(esCon){
@@ -2674,26 +2797,32 @@ function computeBalanceCierre(gen, cfg){
   return { eCCWhDia, eGenWhDia, hspAnual, hspCritico, PR, pReqAnualW, pReqCriticoW, instaladaW,
     margenAnualPct, margenCriticoPct, modulosAdicionalesAnual, modulosAdicionalesCritico };
 }
+// RF-34: resumen del ajuste aceptado, con la verificación de TODO el catálogo de reguladores
+// contra el generador ampliado (tensión, corriente al banco e Isc, igual que la tabla ③).
 function renderAjusteAceptado(gen, bal){
-  const modsNecesarios = Math.max(bal.modulosAdicionalesAnual||0, bal.modulosAdicionalesCritico||0);
-  const npAjustado = Math.ceil((gen.cfg.totalModulos+modsNecesarios)/gen.cfg.ns);
-  const factorEscala = (gen.cfg.ns*npAjustado)/gen.cfg.totalModulos;
-  const iscAjustada = gen.cfg.corrienteArregloA*factorEscala;
-  let reguladorOk = null;
-  if(bancState.rama==='con-almacenamiento'){
-    const eq = (window.CATALOGO_REGULADORES||[]).find(e=>e.id===bancState.reguladorId);
-    if(eq) reguladorOk = iscAjustada<=eq.iscMaxA;
+  const base = gen.base;
+  const aj = bancState.ajusteBalance;
+  const modsAnadidos = gen.cfg.totalModulos - base.cfg.totalModulos;
+  const evs = (window.CATALOGO_REGULADORES||[]).map(e=>evaluarRegulador(gen, e));
+  const cumplen = evs.filter(ev=>ev.veredicto==='cumple');
+  const evSel = evs.find(ev=>ev.equipo.id===bancState.reguladorId);
+  const iBanco = gen.cfg.potenciaInstaladaW / bancState.tensionBancoV;
+  let veredictoEquipos;
+  if(cumplen.length===0){
+    veredictoEquipos = `<div style="color:var(--danger);margin-top:6px;">❌ Ningún regulador del catálogo admite el generador ampliado (corriente al banco ${fmt(iBanco,2)} A, Isc ${fmt(gen.cfg.corrienteArregloA,2)} A, Voc en frío ${fmt(gen.cfg.vocTotalStringV,2)} V). Agrega al catálogo un equipo de mayor capacidad, o reduce el generador (menos autonomía, otra tecnología de batería o deshacer el ajuste).</div>`;
+  } else if(evSel && evSel.veredicto!=='cumple'){
+    veredictoEquipos = `<div style="color:var(--warn);margin-top:6px;">⚠ El regulador elegido (${escapeHtml(nombreEquipo('regulador',bancState.reguladorId))}) ya no admite el generador ampliado: ${escapeHtml(evSel.fails.join(' '))} Sí lo admiten: ${cumplen.map(ev=>escapeHtml(nombreEquipo('regulador',ev.equipo.id))).join(', ')}.</div>`;
   } else {
-    const eq = (window.CATALOGO_INVERSORES||[]).find(e=>e.id===bancState.inversorId);
-    if(eq) reguladorOk = (gen.cfg.panel.imp*npAjustado)<=eq.impMaxA && iscAjustada<=eq.iscMaxA;
+    veredictoEquipos = `<div style="color:var(--success);margin-top:6px;">✓ El regulador elegido admite el generador ampliado (corriente al banco ${fmt(iBanco,2)} A). Equipos del catálogo que cumplen: ${cumplen.length}.</div>`;
   }
-  return ` Ajuste aceptado: se sugieren ${modsNecesarios} módulo(s) adicional(es) (${gen.cfg.ns}s × ${npAjustado}p, Isc del generador ampliada ≈ ${fmt(iscAjustada,2)} A). ${reguladorOk===null?'':(reguladorOk?'El equipo seleccionado sigue admitiendo el arreglo ampliado.':'⚠ El equipo seleccionado ya NO admite el arreglo ampliado — elige un equipo de mayor capacidad o reduce el generador.')}`;
+  return `
+    <div><strong>Ajuste aceptado:</strong> el generador pasa de ${base.cfg.ns}s × ${base.cfg.np}p (${fmt(base.cfg.potenciaInstaladaW/1000,2)} kWp) a <strong>${gen.cfg.ns}s × ${gen.cfg.np}p (${fmt(gen.cfg.potenciaInstaladaW/1000,2)} kWp)</strong>: +${aj.npExtra} cadena(s) completa(s) de ${gen.cfg.ns} módulos = +${modsAnadidos} módulos (el balance pedía al menos ${aj.modsBalance}; se completa la cadena para no desbalancear el arreglo). Todo el componente se recalculó con este generador.</div>
+    ${veredictoEquipos}`;
 }
 
 /* ============================ RENDER: TAB REGULADOR/BATERÍAS =================================== */
 function renderBancoTab(){
-  const gen = getGeneradorSeleccionado();
-  if(!gen){
+  if(!getGeneradorSeleccionado()){
     return `
     <div class="section-title"><h2>Regulador/Inversor MPPT y banco de baterías</h2><span class="desc">Reto 03 — Dimensionamiento del equipo de conversión y, si aplica, del banco de baterías</span></div>
     <div class="panel"><div class="empty-state">
@@ -2707,6 +2836,7 @@ function renderBancoTab(){
   if(!bancState.ramaManual) bancState.rama = ramaSugerida(state.appType);
   aplicarRestriccionRamaPorAppType();
   const esConAlmacenamiento = bancState.rama==='con-almacenamiento';
+  const gen = getGeneradorReto3(); // depende de la rama: el ajuste del balance solo aplica con almacenamiento
 
   if(esConAlmacenamiento){
     if(bancState.seleccionBateriaAutomatica && bancState.bateriaId===null) bancState.bateriaId = autoSelectBateriaId(gen);
@@ -2791,7 +2921,7 @@ function renderInheritedPanel3(gen, inh){
       <div class="result-card"><div class="rc-label">Días de operación</div><div class="rc-value" style="font-size:14px;">${inh.opDaysPerMonth}/mes · ${inh.opDaysPerYear}/año</div></div>
     </div>
     <div class="grid grid-4" style="margin-top:10px;">
-      <div class="result-card"><div class="rc-label">Panel y configuración (Reto 02)</div><div class="rc-value" style="font-size:14px;">${escapeHtml(panel.marca)} ${escapeHtml(panel.modelo)}</div><div class="rc-note">${cfg.ns}s × ${cfg.np}p · ${cfg.totalModulos} módulos</div></div>
+      <div class="result-card"><div class="rc-label">Panel y configuración (Reto 02)</div><div class="rc-value" style="font-size:14px;">${escapeHtml(panel.marca)} ${escapeHtml(panel.modelo)}</div><div class="rc-note">${cfg.ns}s × ${cfg.np}p · ${cfg.totalModulos} módulos${gen.base?` <strong style="color:var(--accent);">(ampliado por el balance de cierre; Reto 02: ${gen.base.cfg.ns}s × ${gen.base.cfg.np}p)</strong>`:''}</div></div>
       <div class="result-card"><div class="rc-label">Potencia instalada</div><div class="rc-value">${fmt(cfg.potenciaInstaladaW/1000,2)}<span class="unit">kW</span></div><div class="rc-note">Requerida: ${fmt(ppicoW/1000,2)} kW</div></div>
       <div class="result-card"><div class="rc-label">HSP anual / mes crítico</div><div class="rc-value" style="font-size:14px;">${hspTxt}</div><div class="rc-note">kWh/m²·día · PR=${fmt(genState.PR,2)}</div></div>
       <div class="result-card"><div class="rc-label">Temperaturas</div><div class="rc-value" style="font-size:14px;">${fmt(genState.tAmbMin,2)}°C mín · ${fmt(cfg.tCelda,2)}°C celda</div></div>
@@ -2821,6 +2951,7 @@ function renderRamaSelectorPanel(){
       </label>
     </div>
     ${sinDeshabilitada ? `<div class="small-note" style="margin-top:8px;color:var(--warn);">⚠ La rama "sin almacenamiento" está deshabilitada porque el tipo de aplicación declarado en el Reto 01 es <strong>${APP_TYPE_LABELS[state.appType]}</strong>: ${motivoSin} Para habilitarla, cambia el tipo de aplicación a On-grid o a un híbrido on-grid en la pestaña "Proyecto".</div>` : ''}
+    ${casoPruebaActivo() && (sinDeshabilitada || conDeshabilitada) ? `<div class="small-note" style="margin-top:8px;color:var(--accent-2);">🧪 Caso de prueba estandarizado: para evaluar la rama ${sinDeshabilitada?'sin':'con'} almacenamiento, cambia el tipo de aplicación en "Proyecto" a ${sinDeshabilitada?'On-grid o Híbrido on-grid':'Off-grid o un híbrido'}. El generador (4 × 550 Wp), el PR y la tensión máxima del caso se conservan.</div>` : ''}
     ${conDeshabilitada ? `<div class="small-note" style="margin-top:8px;color:var(--warn);">⚠ La rama "con almacenamiento" está deshabilitada porque el tipo de aplicación declarado en el Reto 01 es <strong>On-grid</strong>: ${motivoCon} Para habilitarla, cambia el tipo de aplicación a Off-grid o a un híbrido en la pestaña "Proyecto".</div>` : ''}
     <div class="small-note" style="margin-top:8px;">${genState.criterioSeleccion==='conAlmacenamiento' || genState.criterioSeleccion==='sinAlmacenamiento'
       ? `Valor inicial fijado por el criterio de selección automática elegido en "Generador FV": <strong>${ramaSugerida(state.appType)==='con-almacenamiento'?'con almacenamiento':'sin almacenamiento'}</strong>.`
@@ -2998,10 +3129,16 @@ function renderBalanceCierrePanel(gen){
       <div class="result-card"><div class="rc-label">Margen / déficit vs. promedio anual</div><div class="rc-value" style="color:${deficitAnual?'var(--danger)':'var(--success)'}">${fmt(Math.abs(bal.margenAnualPct),2)}%<span class="unit">${deficitAnual?'déficit':'margen'}</span></div><div class="rc-note">${deficitAnual?('faltan ≈ '+bal.modulosAdicionalesAnual+' módulo(s) adicional(es)'):'cubre la demanda anual promedio'}</div></div>
       <div class="result-card"><div class="rc-label">Margen / déficit vs. mes crítico</div><div class="rc-value" style="color:${deficitCritico?'var(--danger)':'var(--success)'}">${fmt(Math.abs(bal.margenCriticoPct),2)}%<span class="unit">${deficitCritico?'déficit':'margen'}</span></div><div class="rc-note">${deficitCritico?('faltan ≈ '+bal.modulosAdicionalesCritico+' módulo(s) adicional(es)'):'cubre la demanda del mes crítico'}</div></div>
     </div>
-    ${(deficitAnual || deficitCritico) ? `
+    ${gen.base ? `
+    <div class="panel" style="margin-top:12px;border-color:var(--accent);">
+      <div class="small-note">${renderAjusteAceptado(gen, bal)}
+      ${(deficitAnual || deficitCritico) ? `<div style="color:var(--danger);margin-top:6px;">⚠ Aun con el ajuste persiste un déficit en ${deficitCritico?'el mes crítico':'el promedio anual'}.</div>` : ''}
+      <button class="btn btn-ghost btn-sm" id="btnDeshacerAjusteBalance" style="margin-top:8px;">↺ Deshacer ajuste (volver al generador del Reto 02)</button></div>
+    </div>`
+    : (deficitAnual || deficitCritico) ? `
     <div class="panel" style="margin-top:12px;background:var(--danger-soft);border-color:var(--danger);">
-      <div class="small-note">⚠ El generador instalado no alcanza a cubrir el balance de cierre en ${deficitCritico?'el mes crítico':'promedio anual'}.${bancState.aceptarAjusteBalance ? renderAjusteAceptado(gen,bal) : ''}
-      <br><button class="btn ${bancState.aceptarAjusteBalance?'btn-ghost':'btn-primary'} btn-sm" id="btnAceptarAjusteBalance" style="margin-top:8px;">${bancState.aceptarAjusteBalance?'↺ Deshacer ajuste':'Aceptar ajuste sugerido (añadir módulos)'}</button></div>
+      <div class="small-note">⚠ El generador instalado no alcanza a cubrir el balance de cierre en ${deficitCritico?'el mes crítico':'promedio anual'}. Al aceptar el ajuste se añaden ${npExtraParaBalance(gen,bal)} cadena(s) completa(s) de ${gen.cfg.ns} módulos (+${npExtraParaBalance(gen,bal)*gen.cfg.ns} módulos) y se recalcula todo el componente con el generador ampliado.
+      <br><button class="btn btn-primary btn-sm" id="btnAceptarAjusteBalance" style="margin-top:8px;">Aceptar ajuste sugerido (añadir módulos)</button></div>
     </div>` : ''}
   </div>`;
 }
@@ -3032,17 +3169,18 @@ function renderComparacionTecnologiasPanel(gen){
 
 /* ============================ INFORME: sección Reto 03 ========================================= */
 function buildBancoReportSection(){
-  const gen = getGeneradorSeleccionado();
-  if(!gen) return `<div class="rp-section-title">Regulador/Inversor y banco de baterías — Reto 03</div>
+  if(!getGeneradorSeleccionado()) return `<div class="rp-section-title">Regulador/Inversor y banco de baterías — Reto 03</div>
     <div style="font-size:10px;color:#777;">Aún no se ha completado el dimensionamiento del generador en "Generador FV", por lo que esta sección no pudo calcularse.</div>`;
   if(!bancState.ramaManual) bancState.rama = ramaSugerida(state.appType);
   aplicarRestriccionRamaPorAppType();
   const esCon = bancState.rama==='con-almacenamiento';
+  const gen = getGeneradorReto3();
   const inh = getInheritedData();
   const verifBadge = (inh.esVerificacion && genState.panelSeleccionadoId==='ref-caso-prueba') ? ' <span style="font-size:8px;background:#38BDF822;color:#1a6fa3;padding:1px 6px;border-radius:999px;">modo verificación: caso de prueba estandarizado</span>' : '';
 
   let html = `<div class="rp-section-title">Regulador/Inversor y banco de baterías — Reto 03${verifBadge}</div>
-    <div style="font-size:9.5px;color:#777;margin-bottom:6px;">Rama activa: <strong>${esCon?'con almacenamiento':'sin almacenamiento'}</strong> (según tipo de aplicación: ${APP_TYPE_LABELS[state.appType]}).</div>`;
+    <div style="font-size:9.5px;color:#777;margin-bottom:6px;">Rama activa: <strong>${esCon?'con almacenamiento':'sin almacenamiento'}</strong> (según tipo de aplicación: ${APP_TYPE_LABELS[state.appType]}).</div>
+    ${gen.base ? `<div style="font-size:9.5px;color:#1a6fa3;margin-bottom:6px;">Ajuste del balance de cierre aceptado: generador ampliado de ${gen.base.cfg.ns}s × ${gen.base.cfg.np}p (${fmt(gen.base.cfg.potenciaInstaladaW/1000,2)} kWp) a ${gen.cfg.ns}s × ${gen.cfg.np}p (${fmt(gen.cfg.potenciaInstaladaW/1000,2)} kWp); los resultados de esta sección usan el generador ampliado.</div>` : ''}`;
 
   if(esCon){
     if(bancState.seleccionBateriaAutomatica && bancState.bateriaId===null) bancState.bateriaId = autoSelectBateriaId(gen);
@@ -3598,8 +3736,9 @@ function attachRootEvents(){
     }
     // El arreglo puede cambiar de tamaño: se reabre la selección automática del panel y,
     // aguas abajo, la de regulador/inversor/batería, para que se revalide todo contra el
-    // nuevo tipo de aplicación en vez de arrastrar la configuración anterior.
-    genState.panelSeleccionadoId = null; genState.seleccionAutomatica = true; genState.panelNsExtra = 0;
+    // nuevo tipo de aplicación en vez de arrastrar la configuración anterior. Un panel
+    // elegido a mano (o fijado por el caso de prueba) se conserva, igual que los equipos.
+    if(genState.seleccionAutomatica){ genState.panelSeleccionadoId = null; genState.panelNsExtra = 0; }
     if(bancState){
       if(bancState.seleccionReguladorAutomatica) bancState.reguladorId = null;
       if(bancState.seleccionInversorAutomatica) bancState.inversorId = null;
@@ -3661,8 +3800,9 @@ function attachRootEvents(){
       render();
     });
   };
-  bindGenField('gf-lat','lat', v=>parseFloat(v)||0);
-  bindGenField('gf-lon','lon', v=>parseFloat(v)||0);
+  // Escribir una coordenada a mano deja de corresponder a un caso guardado.
+  bindGenField('gf-lat','lat', v=>{ genState.casoGuardadoId = ''; return parseFloat(v)||0; });
+  bindGenField('gf-lon','lon', v=>{ genState.casoGuardadoId = ''; return parseFloat(v)||0; });
   bindGenField('gf-tilt','tilt', v=>parseFloat(v)||0);
   bindGenField('gf-azimuth','azimuth', v=>parseFloat(v)||0);
   bindGenField('gf-ventIni','ventanaInicio', v=>parseInt(v)||0);
@@ -3774,7 +3914,8 @@ function attachRootEvents(){
     if(bat && !bancState.tensionBancoManual){ bancState.tensionBancoV = defaultBankVoltageForBattery(bat); }
     render();
   }));
-  app.querySelector('#btnAceptarAjusteBalance')?.addEventListener('click', ()=>{ bancState.aceptarAjusteBalance = !bancState.aceptarAjusteBalance; render(); });
+  app.querySelector('#btnAceptarAjusteBalance')?.addEventListener('click', ()=>{ aceptarAjusteBalance(); render(); });
+  app.querySelector('#btnDeshacerAjusteBalance')?.addEventListener('click', ()=>{ deshacerAjusteBalance(); render(); });
   app.querySelector('#btnAjustarCumplir')?.addEventListener('click', ()=>{ ajustarParaCumplir(); render(); });
   app.querySelector('#btnActivarCasoPrueba3')?.addEventListener('click', ()=>{ activarCasoPruebaReto3(); render(); toast('Caso de prueba estandarizado del Reto 03 cargado (verificación).','success'); });
   app.querySelector('#btnActivarCasoPrueba3Empty')?.addEventListener('click', ()=>{ activarCasoPruebaReto3(); render(); toast('Caso de prueba estandarizado del Reto 03 cargado (verificación).','success'); });
