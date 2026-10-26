@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pruebas del caso estandarizado</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --text:#1c2430; --muted:#5d6878; --border:#dde2e8;
+    --ok:#1f7a45; --ok-soft:#e5f4ea; --fail:#b3261e; --fail-soft:#fbe9e7;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#11161d; --panel:#18202a; --text:#e6ebf1; --muted:#9aa6b5; --border:#2a3542;
+      --ok:#5fd08e; --ok-soft:#173225; --fail:#ff8a80; --fail-soft:#3a1f1d; }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main{ max-width:1000px; margin:0 auto; padding:24px 16px 48px; }
+  h1{ font-size:22px; margin:0 0 4px; }
+  h2{ font-size:16px; margin:28px 0 8px; }
+  p{ margin:4px 0; color:var(--muted); }
+  .resumen{ margin:16px 0; padding:14px 16px; border-radius:8px; border:1px solid var(--border); background:var(--panel); font-weight:600; }
+  .resumen.ok{ border-color:var(--ok); background:var(--ok-soft); color:var(--ok); }
+  .resumen.fail{ border-color:var(--fail); background:var(--fail-soft); color:var(--fail); }
+  .tabla{ width:100%; overflow-x:auto; background:var(--panel); border:1px solid var(--border); border-radius:8px; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th,td{ padding:7px 10px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+  th{ color:var(--muted); font-weight:600; }
+  td.num{ font-family:ui-monospace,Consolas,monospace; white-space:nowrap; }
+  tr.fail td{ background:var(--fail-soft); }
+  .estado{ font-weight:700; }
+  .estado.ok{ color:var(--ok); } .estado.fail{ color:var(--fail); }
+  iframe{ display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pruebas del caso estandarizado — Reto 03</h1>
+  <p>Carga <code>index.html</code>, activa el caso de prueba del TdR (sección 6) y compara cada resultado con el valor calculado a mano con las fórmulas de la sección 4. Tolerancia: 1 %, la diferencia por redondeo que admite el TdR (sección 8).</p>
+  <p>Datos del caso: 4 × 550 Wp (4s × 1p), Ed 7,58 kWh/día, η<sub>inv</sub> 0,90, N = 2 días, f<sub>T</sub> = 1, tensión nominal 48 V, HSP 5,8 / 5,2, PR 0,70, T<sub>mín</sub> 20 °C, celda 63,2 °C.</p>
+  <div id="resumen" class="resumen">Ejecutando pruebas…</div>
+  <div id="resultados"></div>
+  <iframe id="app" src="index.html" title="Aplicación bajo prueba"></iframe>
+</main>
+<script>
+const TOL = 0.01; // 1 %, TdR §8
+
+// Valores esperados, calculados con las fórmulas del TdR §4 para los datos del §6.
+const ESPERADOS = {
+  generador: [
+    ['Módulos en serie × paralelo', 'ns_np', '4 × 1'],
+    ['Potencia instalada [W]', 'P', 2200],
+    ['Voc en frío del arreglo [V]', 'vocFrio', 200.67],
+    ['Vmp en caliente del arreglo [V]', 'vmpCaliente', 148.86],
+    ['Vmp en frío del arreglo [V]', 'vmpFrio', 168.24],
+    ['Corriente de salida al banco [A]', 'iBanco', 45.83],
+    ['Corriente de diseño de conductores 1,25 × Isc [A]', 'iConductores', 17.50],
+  ],
+  reguladores: [
+    ['CTRL-A — Ns máx.', 'ctrl-a.ns', 2], ['CTRL-A — veredicto', 'ctrl-a.v', 'no-cumple'],
+    ['CTRL-B — Ns máx.', 'ctrl-b.ns', 4], ['CTRL-B — veredicto', 'ctrl-b.v', 'cumple'],
+    ['CTRL-C — Ns máx.', 'ctrl-c.ns', 4], ['CTRL-C — veredicto', 'ctrl-c.v', 'no-cumple'],
+  ],
+  agm: [
+    ['Energía diaria en CC [Wh/día]', 'eCC', 8422.22],
+    ['Cn [Wh]', 'cnWh', 33688.89], ['Cn [Ah]', 'cnAh', 701.85],
+    ['Ns × Np', 'ns_np', '4 × 4'], ['Número de baterías', 'n', 16],
+    ['Ah instalados', 'ah', 800], ['kWh instalados', 'kwh', 38.4],
+    ['DoD al final de la autonomía', 'dodFin', 0.4387], ['DoD diario', 'dodDia', 0.2193],
+    ['Tasa C de carga', 'cCarga', 0.0573], ['Tasa C de descarga', 'cDescarga', 0.0263],
+    ['Energía a generar [Wh/día]', 'eGen', 10527.78],
+    ['P requerida, HSP anual [W]', 'pReqA', 2593.05], ['P requerida, mes crítico [W]', 'pReqC', 2892.24],
+    ['Margen anual [%]', 'mA', -15.16], ['Margen mes crítico [%]', 'mC', -23.93],
+    ['Módulos adicionales (anual / crítico)', 'mods', '1 / 2'],
+    ['¿El banco se recupera?', 'rec', 'no'],
+  ],
+  lfp: [
+    ['Cn [Wh]', 'cnWh', 21055.56], ['Cn [Ah] (con 51,2 V)', 'cnAh', 411.24],
+    ['Ns × Np', 'ns_np', '1 × 5'], ['Número de baterías', 'n', 5],
+    ['Ah instalados', 'ah', 500], ['kWh instalados', 'kwh', 25.6],
+    ['DoD al final de la autonomía', 'dodFin', 0.6580], ['DoD diario', 'dodDia', 0.3290],
+    ['Tasa C de carga (corriente a 48 V)', 'cCarga', 0.0917], ['Tasa C de descarga', 'cDescarga', 0.0421],
+    ['Energía a generar [Wh/día]', 'eGen', 9154.59],
+    ['P requerida, HSP anual [W]', 'pReqA', 2254.83], ['P requerida, mes crítico [W]', 'pReqC', 2515.00],
+    ['Margen anual [%]', 'mA', -2.43], ['Margen mes crítico [%]', 'mC', -12.53],
+    ['Módulos adicionales (anual / crítico)', 'mods', '1 / 1'],
+    ['¿El banco se recupera?', 'rec', 'no'],
+  ],
+  inversores: [
+    ['INV-A — relación DC/AC', 'inv-a.r', 1.4667], ['INV-A — veredicto', 'inv-a.v', 'no-cumple'],
+    ['INV-B — relación DC/AC', 'inv-b.r', 1.1], ['INV-B — veredicto', 'inv-b.v', 'cumple'],
+    ['INV-C — relación DC/AC', 'inv-c.r', 0.7333], ['INV-C — veredicto', 'inv-c.v', 'alerta'],
+  ],
+  tecnologias: [
+    ['AGM — kWh / año de servicio', 'agm', 9.6],
+    ['LFP — kWh / año de servicio', 'lfp', 2.56],
+  ],
+  ajuste: [
+    ['Cadenas añadidas', 'npExtra', 1],
+    ['Corriente al banco con el generador ampliado [A]', 'iBanco', 91.67],
+    ['CTRL-B con el generador ampliado', 'ctrlB', 'no-cumple'],
+  ],
+};
+
+const SECCIONES = [
+  ['generador', 'Generador y verificación del arreglo (RF-28, RF-29)'],
+  ['reguladores', 'Reguladores del TdR (RF-28, RF-31)'],
+  ['agm', 'Banco AGM 12 V / 200 Ah (RF-32 a RF-35)'],
+  ['lfp', 'Banco LFP 51,2 V / 100 Ah (RF-32 a RF-35)'],
+  ['inversores', 'Inversores del TdR, rama sin almacenamiento (RF-30, RF-31)'],
+  ['tecnologias', 'Comparación de tecnologías (RF-35)'],
+  ['ajuste', 'Ajuste aceptado del balance de cierre, banco AGM (RF-34)'],
+];
+
+function calcular(w){
+  // Las variables de estado de la app (genState, bancState) son declaraciones `let` globales:
+  // se leen y modifican con eval en el contexto de la propia app.
+  const ev = (code)=> w.eval(code);
+  w.activarCasoPruebaReto3();
+  const gen = w.getGeneradorSeleccionado();
+  const r = {};
+
+  const regA = w.evaluarRegulador(gen, w.CATALOGO_REGULADORES.find(e=>e.id==='ctrl-a'));
+  r.generador = {
+    ns_np: `${gen.cfg.ns} × ${gen.cfg.np}`, P: gen.cfg.potenciaInstaladaW,
+    vocFrio: regA.vArr.vocFrioV, vmpCaliente: regA.vArr.vmpCalienteV, vmpFrio: regA.vArr.vmpFrioV,
+    iBanco: regA.vCor.iSalidaBancoA, iConductores: regA.vCor.iDisenoConductoresA,
+  };
+
+  r.reguladores = {};
+  for(const id of ['ctrl-a','ctrl-b','ctrl-c']){
+    const e = w.evaluarRegulador(gen, w.CATALOGO_REGULADORES.find(x=>x.id===id));
+    r.reguladores[id+'.ns'] = e.vArr.nsMaxEquipo;
+    r.reguladores[id+'.v'] = e.veredicto;
+  }
+
+  const banco = (id)=>{
+    ev(`bancState.bateriaId = ${JSON.stringify(id)}; bancState.dodManual = false;`);
+    const b = w.CATALOGO_BATERIAS.find(x=>x.id===id);
+    const cfg = w.computeBancoBaterias(gen, b, { vBanco: 48, dodDisenoPct: b.dodDisenoPct });
+    const t = w.computeTasaC(gen, cfg), rec = w.computeTiempoRecuperacion(gen, cfg), bal = w.computeBalanceCierre(gen, cfg);
+    return {
+      eCC: cfg.eCCWhDia, cnWh: cfg.cnWh, cnAh: cfg.cnAh, ns_np: `${cfg.ns} × ${cfg.np}`, n: cfg.numBaterias,
+      ah: cfg.ahInstalados, kwh: cfg.kwhInstalados, dodFin: cfg.dodFinal, dodDia: cfg.dodDiario,
+      cCarga: t.tasaCCarga, cDescarga: t.tasaCDescarga, eGen: bal.eGenWhDia,
+      pReqA: bal.pReqAnualW, pReqC: bal.pReqCriticoW, mA: bal.margenAnualPct, mC: bal.margenCriticoPct,
+      mods: `${bal.modulosAdicionalesAnual} / ${bal.modulosAdicionalesCritico}`, rec: rec.recupera ? 'sí' : 'no',
+    };
+  };
+  r.lfp = banco('lfp-generico');
+  r.agm = banco('agm-generico');
+
+  r.inversores = {};
+  for(const id of ['inv-a','inv-b','inv-c']){
+    const e = w.evaluarInversor(gen, w.CATALOGO_INVERSORES.find(x=>x.id===id));
+    r.inversores[id+'.r'] = e.dcac.ratio;
+    r.inversores[id+'.v'] = e.veredicto;
+  }
+
+  const comp = w.compararTecnologiasEnergiaPorAnio(gen);
+  r.tecnologias = {
+    agm: comp.find(c=>c.bateria.id==='agm-generico').energiaPorAnioKWh,
+    lfp: comp.find(c=>c.bateria.id==='lfp-generico').energiaPorAnioKWh,
+  };
+
+  // Ajuste del balance con el banco AGM (elegido en último lugar).
+  w.aceptarAjusteBalance();
+  const genAj = w.getGeneradorReto3();
+  const ctrlB = w.evaluarRegulador(genAj, w.CATALOGO_REGULADORES.find(x=>x.id==='ctrl-b'));
+  r.ajuste = { npExtra: genAj.npExtra ?? 0, iBanco: ctrlB.vCor.iSalidaBancoA, ctrlB: ctrlB.veredicto };
+  w.deshacerAjusteBalance();
+  return r;
+}
+
+function comparar(esperado, obtenido){
+  if(typeof esperado === 'number'){
+    if(typeof obtenido !== 'number' || !isFinite(obtenido)) return false;
+    if(esperado === 0) return Math.abs(obtenido) < 1e-9;
+    return Math.abs(obtenido - esperado) / Math.abs(esperado) <= TOL;
+  }
+  return String(obtenido) === String(esperado);
+}
+function mostrar(v){
+  if(typeof v !== 'number') return v ?? '—';
+  return Math.abs(v) >= 100 ? v.toLocaleString('es-CO',{maximumFractionDigits:2}) : v.toLocaleString('es-CO',{maximumFractionDigits:4});
+}
+function escapar(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function pintar(resultados){
+  let total = 0, fallas = 0, html = '';
+  for(const [clave, titulo] of SECCIONES){
+    const filas = ESPERADOS[clave].map(([nombre, campo, esperado])=>{
+      const obtenido = resultados[clave][campo];
+      const ok = comparar(esperado, obtenido);
+      total++; if(!ok) fallas++;
+      return `<tr class="${ok?'':'fail'}"><td>${escapar(nombre)}</td><td class="num">${escapar(mostrar(esperado))}</td><td class="num">${escapar(mostrar(obtenido))}</td><td class="estado ${ok?'ok':'fail'}">${ok?'✓':'✗'}</td></tr>`;
+    }).join('');
+    html += `<h2>${escapar(titulo)}</h2><div class="tabla"><table><thead><tr><th>Magnitud</th><th>Esperado</th><th>App</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  }
+  document.getElementById('resultados').innerHTML = html;
+  const res = document.getElementById('resumen');
+  res.className = 'resumen ' + (fallas ? 'fail' : 'ok');
+  res.textContent = fallas ? `✗ ${fallas} de ${total} pruebas fallaron.` : `✓ Las ${total} pruebas pasaron.`;
+}
+
+document.getElementById('app').addEventListener('load', ()=>{
+  const res = document.getElementById('resumen');
+  try{
+    const w = document.getElementById('app').contentWindow;
+    if(typeof w.activarCasoPruebaReto3 !== 'function') throw new Error('No se encontraron las funciones de la aplicación en index.html.');
+    pintar(calcular(w));
+  } catch(err){
+    res.className = 'resumen fail';
+    res.textContent = (err && err.name === 'SecurityError')
+      ? 'El navegador bloqueó el acceso a index.html. Abre esta página desde un servidor (Vercel o http://localhost), no con doble clic.'
+      : 'No se pudieron ejecutar las pruebas: ' + (err && err.message ? err.message : err);
+  }
+});
+</script>
+</body>
+</html>

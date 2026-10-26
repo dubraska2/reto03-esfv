@@ -35,13 +35,16 @@ window.BASE_DATOS_SOLAR = {
       nombre: "Uribia",
       lat: 12.18,
       lon: -71.28,
+      // Caso de prueba estandarizado: el HSP anual (5,8) y el del mes de menor recurso (mayo, 5,2)
+      // son los valores que fija el TdR del Reto 02; no son el resultado de una consulta a
+      // PVWatts. Por eso el promedio de los 12 meses (≈ 6,41) no coincide con el HSP anual.
       hspAnual: 5.8,
       hspMensual: [
         6.75, 7.22, 7.1, 6.41, 5.2, 5.96, 6.16, 6.47, 6.46, 6.3, 6.36, 6.57
       ],
       tilt: 20.0,
       azimuth: 180.0,
-      fuente: "PVWatts",
+      fuente: "Condiciones especificadas en el TdR del Reto 02 (caso de prueba estandarizado): HSP anual 5,8 y HSP del mes de menor recurso 5,2 kWh/m²·día. Los demás valores mensuales son ilustrativos y su promedio no corresponde al HSP anual declarado.",
       fechaConsulta: "2026-10-02"
     },
     {

@@ -2035,7 +2035,7 @@ function renderRecursoResultado(r, hsp){
   const fechaTxt = r.consultadoEn ? new Date(r.consultadoEn).toLocaleString('es-CO') : '—';
   return `
   <div style="margin-top:14px;">
-    ${isLocal && r.seleccionado ? `<div class="small-note" style="margin-bottom:10px;color:var(--success);">✓ Datos de la base de datos local para el caso guardado <strong style="color:var(--text)">${escapeHtml(r.casoNombre)}</strong> · inclinación ${r.tilt}°, azimut ${r.azimuth}°. No se consultó la API (para consultarla, elige "Coordenadas manuales").</div>`
+    ${isLocal && r.seleccionado ? `<div class="small-note" style="margin-bottom:10px;color:var(--success);">✓ Datos de la base de datos local para el caso guardado <strong style="color:var(--text)">${escapeHtml(r.casoNombre)}</strong> · inclinación ${r.tilt}°, azimut ${r.azimuth}°. No se consultó la API (para consultarla, elige "Coordenadas manuales").${r.fuenteTexto?`<br><span style="color:var(--text-faint);">Origen de los datos: ${escapeHtml(r.fuenteTexto)}</span>`:''}</div>`
       : isLocal ? `<div class="hour-detail" style="border-color:var(--warn);margin-top:0;margin-bottom:12px;">
         <strong style="color:var(--warn);">⚠ Usando datos locales de respaldo (RF-15).</strong>
         <div class="small-note" style="margin-top:4px;">${escapeHtml(r.detalle||'')} Se usó el caso guardado más cercano a la coordenada declarada: <strong style="color:var(--text)">${escapeHtml(r.casoNombre)}</strong> (inclinación ${r.tilt}°, azimut ${r.azimuth}°).</div>
