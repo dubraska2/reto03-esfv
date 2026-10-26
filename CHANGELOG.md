@@ -18,6 +18,9 @@ Auditoría del Reto 03 contra el TdR (métodos de cálculo, RF-25 a RF-36, crite
 - **Corregido:** `config.js` tenía la clave personal de NREL y estaba publicado en GitHub. Ahora solo lleva `DEMO_KEY`.
 - **Nuevo:** la función `api/pvwatts.js` (Vercel) consulta PVWatts con la clave guardada en la variable de entorno `NREL_API_KEY`. La clave que quedó en el historial de git debe revocarse en developer.nlr.gov.
 
+### Caso de prueba estandarizado
+- **Nuevo:** el botón "Cargar caso de prueba estandarizado" (Reto 02 y Reto 03) carga en todas las pestañas anteriores el proyecto de `caso alta guajira.json`: datos del proyecto, las 8 cargas con sus horarios, 7,58 kWh/día y 910 W a las 17:00. En el Generador selecciona el recurso solar de Uribia y el módulo de referencia (Genérico TdR Reto 02, §7.2). "✕ Volver a mis datos" restaura el proyecto que se tenía antes.
+
 ### Ramas (RF-25)
 - **Corregido:** cambiar el tipo de aplicación borraba el panel elegido a mano y reemplazaba el PR y la tensión máxima por los valores típicos, aunque fueran datos fijados. Con eso, la rama sin almacenamiento del caso de prueba evaluaba otro generador. Ahora se conservan el panel elegido a mano y los valores fijados.
 - **Nuevo:** en el caso de prueba, una nota indica qué tipo de aplicación elegir para evaluar la otra rama.
