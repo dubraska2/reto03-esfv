@@ -137,11 +137,11 @@ window.CATALOGO_PANELES = [
     id: "longi-lr8-66hvd-655",
     marca: "LONGi Solar",
     modelo: "Hi-MO X10 Scientist LR8-66HVD-655M (BC-Cell, bin 640-665M)",
-    pMax: 655, vmp: 41.08, imp: 15.94, voc: 49.82, isc: 16.62,
+    pMax: 650, vmp: 41.08, imp: 15.94, voc: 49.82, isc: 16.62,
     betaVocPct: -0.20, gammaPmpPct: -0.26, alphaIscPct: 0.05,
     celdasSerie: 132, noct: 45,
     largoM: 2.382, anchoM: 1.134, areaM2: 2.701, eficienciaPct: 24.2,
-    fuente: "Ficha técnica LONGi Hi-MO X10 Scientist LR8-66HVD 640-665M, bin de potencia 655M, datasheet publicado por el fabricante (20250605 BGV01).",
+    fuente: "Ficha técnica LONGi Hi-MO X10 Scientist LR8-66HVD 640-665M, bin de potencia 650M, datasheet publicado por el fabricante (20250605 BGV01).",
     fechaConsulta: "2026-11-12"
   },
   {
